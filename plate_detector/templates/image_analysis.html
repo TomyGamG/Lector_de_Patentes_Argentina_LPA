@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Análisis de Imágenes - PlateDetector{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h2><i class="fas fa-image"></i> Análisis de Imágenes</h2>
+        <p class="text-muted">Sube una imagen y YOLO detectará automáticamente objetos y patentes</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-upload"></i> Subir Imagen para Análisis</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{% url 'upload_analyze' %}" enctype="multipart/form-data" id="uploadForm">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="id_image" class="form-label">Seleccionar imagen:</label>
+                        {{ form.image }}
+                        <div class="form-text">
+                            Formatos soportados: JPG, PNG, BMP. Tamaño máximo: 10MB
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-success w-100" id="analyzeBtn">
+                        <i class="fas fa-search"></i> Analizar Imagen con YOLO
+                    </button>
+                </form>
+                
+                <div id="uploadProgress" class="mt-3" style="display: none;">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             style="width: 100%">Procesando con YOLO...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5><i class="fas fa-info-circle"></i> Información</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h6>¿Qué detecta YOLO?</h6>
+                    <ul class="mb-0">
+                        <li><strong>Vehículos:</strong> Coches, camiones, motos</li>
+                        <li><strong>Patentes:</strong> Reconocimiento automático de texto</li>
+                        <li><strong>Personas:</strong> Detecta personas en la imagen</li>
+                        <li><strong>Objetos varios:</strong> Señales, semáforos, etc.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-history"></i> Análisis Recientes</h5>
+                    <span class="badge bg-primary">{{ analyses.count }} análisis</span>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if analyses %}
+                <div class="list-group">
+                    {% for analysis in analyses %}
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">
+                                <i class="fas fa-file-image text-primary"></i>
+                                {{ analysis.image.name|slice:"20:" }}
+                            </h6>
+                            <small class="text-muted">{{ analysis.uploaded_at|timesince }}</small>
+                        </div>
+                        
+                        <div class="mb-2">
+                            {% if analysis.plate_detected %}
+                                <span class="badge bg-success">
+                                    <i class="fas fa-car"></i> Patente: {{ analysis.detected_plate }}
+                                </span>
+                                <span class="badge bg-info">Conf: {{ analysis.confidence|floatformat:2 }}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Sin patentes</span>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="btn-group btn-group-sm">
+                            <a href="{% url 'analysis_detail' analysis.id %}" class="btn btn-outline-primary">
+                                <i class="fas fa-eye"></i> Ver Detalles
+                            </a>
+                            <a href="{% url 'delete_analysis' analysis.id %}" class="btn btn-outline-danger" 
+                               onclick="return confirm('¿Eliminar este análisis?')">
+                                <i class="fas fa-trash"></i> Eliminar
+                            </a>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-images fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">No hay análisis recientes</p>
+                    <p class="text-muted">Sube una imagen para comenzar</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const uploadForm = document.getElementById('uploadForm');
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const uploadProgress = document.getElementById('uploadProgress');
+    
+    uploadForm.addEventListener('submit', function() {
+        // Mostrar progreso
+        analyzeBtn.disabled = true;
+        analyzeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+        uploadProgress.style.display = 'block';
+    });
+});
+</script>
+{% endblock %}

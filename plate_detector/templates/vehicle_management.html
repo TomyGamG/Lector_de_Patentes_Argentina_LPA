@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+
+{% block title %}Gestionar Vehículos - PlateDetector{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h2><i class="fas fa-truck"></i> Gestión de Vehículos</h2>
+        <p class="text-muted">Administra los vehículos de tu empresa para el reconocimiento automático</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Agregar Nuevo Vehículo</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="id_plate_number" class="form-label">Matrícula *</label>
+                        {{ form.plate_number }}
+                        <div class="form-text">Formato: ABC123 o 1234ABC</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="id_brand" class="form-label">Marca *</label>
+                        {{ form.brand }}
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="id_model" class="form-label">Modelo *</label>
+                        {{ form.model }}
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="id_color" class="form-label">Color *</label>
+                        {{ form.color }}
+                    </div>
+                    
+                    <button type="submit" class="btn btn-success w-100">
+                        <i class="fas fa-plus"></i> Agregar Vehículo
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Vehículos Registrados</h5>
+                    <span class="badge bg-primary">{{ vehicles.count }} vehículos</span>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if vehicles %}
+                <div class="list-group">
+                    {% for vehicle in vehicles %}
+                    <div class="list-group-item">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">
+                                <i class="fas fa-car text-primary"></i>
+                                {{ vehicle.plate_number }}
+                            </h6>
+                            <small class="text-muted">
+                                {% if vehicle.is_active %}
+                                    <span class="badge bg-success">Activo</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inactivo</span>
+                                {% endif %}
+                            </small>
+                        </div>
+                        <p class="mb-1">{{ vehicle.brand }} {{ vehicle.model }} - {{ vehicle.color }}</p>
+                        <small class="text-muted">Registrado: {{ vehicle.created_at|date:"d/m/Y" }}</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-truck fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">No hay vehículos registrados.</p>
+                    <p class="text-muted">Agrega tu primer vehículo usando el formulario.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5>Información Importante</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h6><i class="fas fa-info-circle"></i> ¿Por qué registrar vehículos?</h6>
+                    <ul class="mb-0">
+                        <li>Reconocimiento automático como cliente</li>
+                        <li>Historial de accesos del vehículo</li>
+                        <li>Reportes detallados por vehículo</li>
+                        <li>Mayor precisión en el reconocimiento</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

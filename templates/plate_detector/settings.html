@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+
+{% block title %}Configuración - PlateDetector{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h2><i class="fas fa-cog"></i> Configuración del Sistema</h2>
+        <p class="text-muted">Ajusta los parámetros del sistema de detección</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5>Parámetros de Detección</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="id_camera_index" class="form-label">Índice de Cámara</label>
+                                {{ form.camera_index }}
+                                <div class="form-text">
+                                    0 = Cámara principal, 1 = Cámara secundaria, etc.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="id_detection_interval" class="form-label">Intervalo de Detección (segundos)</label>
+                                {{ form.detection_interval }}
+                                <div class="form-text">
+                                    Tiempo mínimo entre detecciones consecutivas
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="id_motion_threshold" class="form-label">Umbral de Movimiento (0-1)</label>
+                        {{ form.motion_threshold }}
+                        <div class="form-text">
+                            Valores más altos = menos sensible al movimiento
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3 form-check form-switch">
+                        {{ form.is_active }}
+                        <label class="form-check-label" for="id_is_active">
+                            Sistema activo
+                        </label>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Guardar Configuración
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="resetToDefaults()">
+                        <i class="fas fa-undo"></i> Restablecer Valores por Defecto
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>Información del Sistema</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item">
+                        <i class="fas fa-microchip text-primary"></i>
+                        <strong>Estado:</strong> 
+                        <span id="systemStatus" class="badge bg-success">Operativo</span>
+                    </div>
+                    <div class="list-group-item">
+                        <i class="fas fa-database text-info"></i>
+                        <strong>Detecciones totales:</strong> 
+                        <span class="badge bg-primary">{{ total_detections }}</span>
+                    </div>
+                    <div class="list-group-item">
+                        <i class="fas fa-users text-success"></i>
+                        <strong>Vehículos registrados:</strong> 
+                        <span class="badge bg-success">{{ total_vehicles }}</span>
+                    </div>
+                    <div class="list-group-item">
+                        <i class="fas fa-hdd text-warning"></i>
+                        <strong>Espacio usado:</strong> 
+                        <span class="badge bg-warning">{{ storage_used }} MB</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5>Acciones Rápidas</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary" onclick="testCamera()">
+                        <i class="fas fa-camera"></i> Probar Cámara
+                    </button>
+                    <button class="btn btn-outline-success" onclick="exportData()">
+                        <i class="fas fa-file-export"></i> Exportar Datos
+                    </button>
+                    <button class="btn btn-outline-warning" onclick="clearOldData()">
+                        <i class="fas fa-trash"></i> Limpiar Datos Antiguos
+                    </button>
+                    <button class="btn btn-outline-info" onclick="showSystemInfo()">
+                        <i class="fas fa-info-circle"></i> Información del Sistema
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function resetToDefaults() {
+    if (confirm('¿Restablecer todos los valores por defecto?')) {
+        document.getElementById('id_camera_index').value = 0;
+        document.getElementById('id_detection_interval').value = 5;
+        document.getElementById('id_motion_threshold').value = 0.5;
+        document.getElementById('id_is_active').checked = true;
+    }
+}
+
+function testCamera() {
+    alert('Función de prueba de cámara en desarrollo...');
+}
+
+function exportData() {
+    alert('Función de exportación de datos en desarrollo...');
+}
+
+function clearOldData() {
+    if (confirm('¿Eliminar detecciones con más de 30 días?')) {
+        alert('Función de limpieza en desarrollo...');
+    }
+}
+
+function showSystemInfo() {
+    const info = `Sistema de Detección de Matrículas
+Version: 1.0
+Desarrollado con Django y OpenCV
+Características:
+- Detección de movimiento
+- Reconocimiento OCR de matrículas
+- Base de datos de clientes
+- Interfaz web responsive`;
+    alert(info);
+}
+</script>
+{% endblock %}

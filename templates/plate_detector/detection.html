@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+
+{% block title %}Detección en Tiempo Real - PlateDetector{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h2><i class="fas fa-camera"></i> Detección en Tiempo Real</h2>
+        <p class="text-muted">Sistema de detección automática de matrículas activado por movimiento</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5>Vista de la Cámara</h5>
+            </div>
+            <div class="card-body text-center">
+                <img src="{% url 'video_feed' %}" width="100%" alt="Video Feed" id="videoFeed">
+                <div class="mt-3">
+                    <button id="startBtn" class="btn btn-success btn-lg">
+                        <i class="fas fa-play"></i> Iniciar Detección
+                    </button>
+                    <button id="stopBtn" class="btn btn-danger btn-lg" disabled>
+                        <i class="fas fa-stop"></i> Detener
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>Estado del Sistema</h5>
+            </div>
+            <div class="card-body">
+                <div id="statusMessage" class="alert alert-info">
+                    Sistema listo para iniciar
+                </div>
+                <ul class="list-group">
+                    <li class="list-group-item">
+                        <i class="fas fa-video text-primary"></i>
+                        Cámara: <span id="cameraStatus">Desconectada</span>
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-running text-success"></i>
+                        Detección de movimiento: <span id="motionStatus">Inactiva</span>
+                    </li>
+                    <li class="list-group-item">
+                        <i class="fas fa-car text-warning"></i>
+                        Reconocimiento de matrículas: <span id="plateStatus">Inactivo</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusMessage = document.getElementById('statusMessage');
+    const cameraStatus = document.getElementById('cameraStatus');
+    const motionStatus = document.getElementById('motionStatus');
+    const plateStatus = document.getElementById('plateStatus');
+    
+    startBtn.addEventListener('click', function() {
+        fetch('{% url "start_detection" %}')
+            .then(response => response.json())
+            .then(data => {
+                statusMessage.className = 'alert alert-success';
+                statusMessage.innerHTML = '<i class="fas fa-check-circle"></i> Detección iniciada correctamente';
+                cameraStatus.textContent = 'Conectada';
+                motionStatus.textContent = 'Activa';
+                plateStatus.textContent = 'Activo';
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+            })
+            .catch(error => {
+                statusMessage.className = 'alert alert-danger';
+                statusMessage.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error al iniciar detección';
+                console.error('Error:', error);
+            });
+    });
+    
+    stopBtn.addEventListener('click', function() {
+        fetch('{% url "stop_detection" %}')
+            .then(response => response.json())
+            .then(data => {
+                statusMessage.className = 'alert alert-warning';
+                statusMessage.innerHTML = '<i class="fas fa-pause-circle"></i> Detección detenida';
+                cameraStatus.textContent = 'Desconectada';
+                motionStatus.textContent = 'Inactiva';
+                plateStatus.textContent = 'Inactivo';
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            })
+            .catch(error => {
+                statusMessage.className = 'alert alert-danger';
+                statusMessage.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Error al detener';
+                console.error('Error:', error);
+            });
+    });
+});
+</script>
+{% endblock %}

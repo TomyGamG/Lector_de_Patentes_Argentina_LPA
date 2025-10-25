@@ -1,0 +1,245 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Detalles del Análisis - PlateDetector{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{% url 'image_analysis' %}">Análisis de Imágenes</a></li>
+                <li class="breadcrumb-item active">Detalles del Análisis</li>
+            </ol>
+        </nav>
+        
+        <h2><i class="fas fa-search"></i> Detalles del Análisis</h2>
+        <p class="text-muted">Resultados detallados del análisis YOLO</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-image"></i> Imagen Analizada</h5>
+            </div>
+            <div class="card-body text-center">
+                <img src="{{ analysis.image.url }}" class="img-fluid rounded" alt="Imagen analizada" 
+                     style="max-height: 500px;">
+                
+                <div class="mt-3">
+                    {% if annotated_exists %}
+                    <a href="{{ annotated_image_url }}" target="_blank" class="btn btn-outline-primary btn-sm">
+                        <i class="fas fa-search"></i> Ver Imagen con Anotaciones
+                    </a>
+                    {% endif %}
+                    <a href="{{ analysis.image.url }}" target="_blank" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-download"></i> Imagen Original
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Información del análisis -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-chart-bar"></i> Estadísticas del Análisis</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h3 class="text-primary">{{ objects_detected|length }}</h3>
+                                <p class="mb-0">Objetos Analizados</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h3 class="{% if analysis.plate_detected %}text-success{% else %}text-secondary{% endif %}">
+                                    {{ license_plates|length }}
+                                </h3>
+                                <p class="mb-0">Patentes Detectadas</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h3 class="text-info">{{ analysis_result.scan_methods_used|length }}</h3>
+                                <p class="mb-0">Métodos Utilizados</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-info-circle"></i> Información del Análisis</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group list-group-flush">
+                    <div class="list-group-item">
+                        <strong>Fecha:</strong> {{ analysis.uploaded_at|date:"d/m/Y H:i" }}
+                    </div>
+                    <div class="list-group-item">
+                        <strong>Archivo:</strong> {{ analysis.image.name }}
+                    </div>
+                    <div class="list-group-item">
+                        <strong>Dimensiones:</strong> {{ image_info.width }} × {{ image_info.height }} px
+                    </div>
+                    <div class="list-group-item">
+                        <strong>Objetos detectados:</strong> 
+                        <span class="badge bg-primary">{{ objects_detected|length }}</span>
+                    </div>
+                    <div class="list-group-item">
+                        <strong>Patentes detectadas:</strong> 
+                        {% if analysis.plate_detected %}
+                            <span class="badge bg-success">{{ license_plates|length }}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">0</span>
+                        {% endif %}
+                    </div>
+                    <div class="list-group-item">
+                        <strong>Candidatos totales:</strong> 
+                        <span class="badge bg-info">{{ analysis_result.total_candidates }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        {% if analysis.plate_detected %}
+        <div class="card mt-4">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="fas fa-car"></i> Patentes Detectadas</h5>
+            </div>
+            <div class="card-body">
+                {% for plate in license_plates %}
+                <div class="alert alert-success">
+                    <h6 class="alert-heading">
+                        <i class="fas fa-check-circle"></i> {{ plate.text }}
+                    </h6>
+                    <div class="small">
+                        <strong>Método:</strong> {{ plate.method }}<br>
+                        <strong>Confianza YOLO:</strong> {{ plate.yolo_confidence|floatformat:3 }}<br>
+                        <strong>Confianza OCR:</strong> {{ plate.confidence|floatformat:3 }}<br>
+                        <strong>Confianza total:</strong> {{ plate.combined_confidence|floatformat:3 }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-list"></i> Todos los Objetos Detectados</h5>
+            </div>
+            <div class="card-body">
+                {% if objects_detected %}
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Objeto</th>
+                                <th>Método</th>
+                                <th>Confianza</th>
+                                <th>Posición</th>
+                                <th>Patente</th>
+                                <th>Texto</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for obj in objects_detected %}
+                            <tr>
+                                <td>
+                                    <span class="badge {% if obj.is_license_plate %}bg-success{% else %}bg-primary{% endif %}">
+                                        {{ obj.class_name }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <small class="text-muted">{{ obj.method }}</small>
+                                </td>
+                                <td>
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar {% if obj.confidence > 0.7 %}bg-success{% elif obj.confidence > 0.4 %}bg-warning{% else %}bg-danger{% endif %}" 
+                                             style="width: {{ obj.confidence|floatformat:2 }}%">
+                                            {{ obj.confidence|floatformat:3 }}
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <small>({{ obj.bbox.0 }}, {{ obj.bbox.1 }})</small><br>
+                                    <small>{{ obj.bbox.2 }}×{{ obj.bbox.3 }}px</small>
+                                </td>
+                                <td>
+                                    {% if obj.is_license_plate %}
+                                        <i class="fas fa-check text-success"></i>
+                                    {% else %}
+                                        <i class="fas fa-times text-secondary"></i>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if obj.plate_text %}
+                                        <code>{{ obj.plate_text }}</code><br>
+                                        <small>Conf: {{ obj.plate_confidence|floatformat:3 }}</small>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                    <p class="text-muted">No se detectaron objetos en esta imagen</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-code"></i> Datos JSON Completos</h5>
+            </div>
+            <div class="card-body">
+                <pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; max-height: 400px; font-size: 12px;"><code>{{ analysis.analysis_result }}</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between">
+            <a href="{% url 'image_analysis' %}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Volver al Análisis
+            </a>
+            <div>
+                <a href="{% url 'delete_analysis' analysis.id %}" class="btn btn-danger"
+                   onclick="return confirm('¿Eliminar este análisis?')">
+                    <i class="fas fa-trash"></i> Eliminar Análisis
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
