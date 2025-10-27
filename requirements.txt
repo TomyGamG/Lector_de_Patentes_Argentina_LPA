@@ -1,0 +1,17 @@
+ultralytics
+opencv-python
+opencv-python-headless
+numpy
+easyocr
+pillow
+torch
+torchvision
+torchaudio
+requests
+tqdm
+matplotlib
+pytesseract
+filterpy
+django
+django-crispy-forms
+crispy-bootstrap5

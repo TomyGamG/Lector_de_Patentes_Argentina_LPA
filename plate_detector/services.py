@@ -68,6 +68,24 @@ class YOLOLicensePlateDetector:
             print(f"❌ ERROR CRÍTICO: No se pudo cargar YOLO: {e}")
             self.model = None
 
+    def corregir_patente(self, texto):
+        import numpy as np
+        
+        if not texto:
+            return ""
+        
+        if texto:
+            array_texto = np.array(texto.upper().split())
+            print(len(array_texto))
+            print(array_texto)
+            corr = " ".join(array_texto)
+            return corr
+
+        else:
+            corr = " ".join(array_texto)
+            return corr
+
+
     def scan_entire_image_for_plates(self, image):
         """Escanea toda la imagen en busca de patentes usando múltiples métodos"""
         plate_candidates = []
@@ -437,7 +455,7 @@ class YOLOLicensePlateDetector:
             
             best_text, best_conf = "", 0.0
             for _, text, conf in results:
-                cleaned_text = text
+                cleaned_text = self.corregir_patente(text)
                 if self.is_valid_plate_format(cleaned_text) and conf > best_conf:
                     best_text, best_conf = cleaned_text, conf
             
