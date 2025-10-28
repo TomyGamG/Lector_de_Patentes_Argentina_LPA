@@ -6,6 +6,7 @@ from django.views.decorators import gzip
 from django.conf import settings
 from django.contrib import messages
 import cv2
+import numpy
 import threading
 import time
 import json
