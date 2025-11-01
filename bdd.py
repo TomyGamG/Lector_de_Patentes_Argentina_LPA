@@ -1,57 +1,73 @@
 import itertools
 import csv
 import gzip
-from tqdm import tqdm  # librería para barra de progreso
+from tqdm import tqdm
 
 LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-def mercosur_generator():
-    """Genera patentes nuevas: AA000AA"""
+# Última patente conocida en 2025
+ULTIMA_SERIE = ('A', 'H', 100, 'A', 'A')  # Representa AH100AA
+
+def mercosur_generator_limit():
+    """
+    Genera patentes nuevas (AA000AA) hasta AH100AA inclusive.
+    """
     for a, b in itertools.product(LETTERS, repeat=2):
         for num in range(1000):
-            middle = f"{num:03d}"
             for c, d in itertools.product(LETTERS, repeat=2):
-                yield f"{a}{b}{middle}{c}{d}"
+                yield f"{a}{b}{num:03d}{c}{d}"
+
+                # Detener cuando lleguemos a la última patente real
+                if (a, b, num, c, d) == ULTIMA_SERIE:
+                    return
 
 def vieja_generator():
-    """Genera patentes viejas: AAA000"""
+    """
+    Genera patentes viejas (AAA000).
+    """
     for a, b, c in itertools.product(LETTERS, repeat=3):
         for num in range(1000):
             yield f"{a}{b}{c}{num:03d}"
 
-def write_all_plates_to_csv_gzip(filename='patentes_argentinas.csv.gz', chunk_size=100000):
+def write_limited_plates_to_csv(filename='patentes_argentinas_limitadas.csv.gz', chunk_size=100000):
     """
-    Escribe patentes nuevas y viejas en un CSV comprimido gzip.
-    Muestra barra de progreso aproximada por tipo.
+    Escribe las patentes (viejas + nuevas hasta AH100AA) en un CSV comprimido gzip.
+    Muestra barra de progreso.
     """
-    # conteos aproximados para porcentaje
-    total_nueva = 26**4 * 1000  # 456,976,000
-    total_vieja = 26**3 * 1000  # 17,576,000
+    print("Calculando cantidad de patentes nuevas hasta AH100AA...")
+
+    # Calcular la cantidad de nuevas a generar hasta AH100AA
+    pos_a = LETTERS.index('A')
+    pos_b = LETTERS.index('H')
+    total_nueva = (pos_a * 26 + pos_b) * 1000 * 26 * 26 + 100 * 26 * 26
+    total_vieja = 26**3 * 1000
+    total = total_nueva + total_vieja
 
     with gzip.open(filename, mode='wt', encoding='utf-8', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['patente', 'tipo'])
-        # NUEVAS
+
+        print("Generando patentes nuevas (hasta AH100AA)...")
         chunk = []
-        print("Escribiendo patentes nuevas...")
-        for i, plate in enumerate(tqdm(mercosur_generator(), total=total_nueva), start=1):
+        for plate in tqdm(mercosur_generator_limit(), total=total_nueva):
             chunk.append([plate, 'nueva'])
-            if i % chunk_size == 0:
+            if len(chunk) >= chunk_size:
                 writer.writerows(chunk)
                 chunk = []
         if chunk:
             writer.writerows(chunk)
 
-        # VIEJAS
+        print("Generando patentes viejas...")
         chunk = []
-        print("Escribiendo patentes viejas...")
-        for i, plate in enumerate(tqdm(vieja_generator(), total=total_vieja), start=1):
+        for plate in tqdm(vieja_generator(), total=total_vieja):
             chunk.append([plate, 'vieja'])
-            if i % chunk_size == 0:
+            if len(chunk) >= chunk_size:
                 writer.writerows(chunk)
                 chunk = []
         if chunk:
             writer.writerows(chunk)
+
+    print(f"✅ Archivo generado: {filename}")
 
 if __name__ == "__main__":
-    write_all_plates_to_csv_gzip('patentes_argentinas.csv.gz', chunk_size=200000)
+    write_limited_plates_to_csv('patentes_argentinas_limitadas.csv.gz', chunk_size=200000)

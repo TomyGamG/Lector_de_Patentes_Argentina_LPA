@@ -9,6 +9,7 @@ import threading
 import requests
 from PIL import Image
 import json
+import pandas as pd
 
 print("🎯 Inicializando Sistema de Análisis con YOLOv8...")
 
@@ -43,6 +44,10 @@ class YOLOLicensePlateDetector:
         self.processing_interval = 2
         self.use_yolo = use_yolo
         self.yolo_model = yolo_model
+        print("📂 Cargando base de patentes...")
+        self.valid_plates = set(pd.read_csv("plates_labels.csv")["label"].str.upper().tolist())
+        print(f"✅ {len(self.valid_plates)} patentes cargadas")
+
         
         if self.use_yolo:
             self.load_yolo_model()
@@ -67,6 +72,25 @@ class YOLOLicensePlateDetector:
         except Exception as e:
             print(f"❌ ERROR CRÍTICO: No se pudo cargar YOLO: {e}")
             self.model = None
+            
+    def match_with_database(self, plate_text):
+        """Compara OCR con base de datos y devuelve mejor match si existe"""
+        plate_text = plate_text.upper().replace(" ", "").strip()
+
+        # Si existe exacto → perfecto
+        if plate_text in self.valid_plates:
+            return plate_text, 1.0
+
+        # ✅ Corrección: buscar coincidencia cercana por similitud
+        # útil por errores tipo B↔8, 0↔O, etc
+        import difflib
+        best = difflib.get_close_matches(plate_text, self.valid_plates, n=1, cutoff=0.6)
+
+        if best:
+            return best[0], 0.85  # confianza corregida
+
+        return None, 0.0
+
 
     def corregir_patente(self, texto):
         import numpy as np
@@ -508,7 +532,17 @@ class YOLOLicensePlateDetector:
                     best_text, best_conf = cleaned_text, conf
             
             if best_text:
-                return best_text, best_conf
+                # Validar con base
+                fixed_plate, db_conf = self.match_with_database(best_text)
+
+                if fixed_plate:
+                    print(f"🎯 Patente confirmada por DB: {fixed_plate}")
+                    final_conf = (best_conf + db_conf) / 2
+                    return fixed_plate, final_conf, best_det
+                else:
+                    print("⚠️ OCR no coincide con base de datos")
+                    return None, 0.0, None
+
 
             # Fallback a Tesseract
             text_t, conf_t = self.recognize_plate_text_tesseract(plate_image)
@@ -681,6 +715,39 @@ class YOLOLicensePlateDetector:
                 letters + digits >= 4 and
                 len(clean_text.replace(' ', '')) == letters + digits)
     
+    def process_frame(self, frame):
+        """Procesa un frame completo y devuelve patente reconocida si la hay"""
+        try:
+            with Timer("PROCESAR FRAME"):
+                
+                # 1️⃣ Detectar candidatos a patente (YOLO + métodos alternos)
+                candidates = self.scan_entire_image_for_plates(frame)
+                valid_plates = []
+
+                for det in candidates:
+                    if not self.is_potential_license_plate(det, frame.shape):
+                        continue
+                    
+                    plate_region = det["region"]
+                    text, conf = self.recognize_plate_text(plate_region)
+
+                    if text and conf > 0.3:
+                        valid_plates.append((text, conf, det))
+
+                if not valid_plates:
+                    return None, 0.0, None
+
+                # 2️⃣ Mejor resultado
+                best_text, best_conf, best_det = max(valid_plates, key=lambda x: x[1])
+
+                print(f"✅ PATENTE DETECTADA: {best_text} | Conf: {best_conf:.2f}")
+                return best_text, best_conf, best_det
+
+        except Exception as e:
+            print(f"❌ Error procesando frame: {e}")
+            return None, 0.0, None
+
+
     def detect_plate(self, image):
         """Detección principal - Analiza TODA la imagen"""
         try:
