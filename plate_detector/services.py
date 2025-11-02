@@ -36,7 +36,7 @@ class Timer:
         return False
 
 class YOLOLicensePlateDetector:
-    def __init__(self, use_yolo=True, yolo_model='yolov8s'):
+    def __init__(self, use_yolo=True, yolo_model='yolov11n'):
         self.model = None
         self.detection_count = 0
         self.last_processing_time = 0
@@ -56,7 +56,7 @@ class YOLOLicensePlateDetector:
             from ultralytics import YOLO
             
             # Usar YOLOv8s para mejor precisión
-            self.model = YOLO('yolov8s.pt')
+            self.model = YOLO('yolov11n.pt')
             
             # Verificar dispositivo
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -76,8 +76,6 @@ class YOLOLicensePlateDetector:
             'O': '0',
             'I': '1',
             'B': '8',
-            'Z': '2',
-            'G': '6',
         }
 
         number_to_digit = {
@@ -89,319 +87,74 @@ class YOLOLicensePlateDetector:
             '2': 'Z',
             '%': 'A',
             '@': 'A',
-            '4': 'A',  # Nota: esta línea se sobrescribe con la siguiente
-            '7': 'Z',
-            '4': 'V',  # Esta sobrescribe la anterior '4': 'A'
+            '4': 'A',
+            '7': 'T',
+            '4': 'V',
         }
         
         if not texto:
             return ""
         
-        print(f"Texto original: {texto}")
-        texto_normal = texto.replace(" ", "").upper()
-        
-        if len(texto_normal) == 6:
-            texto_list = list(texto_normal)
+        if texto:
+            array_texto = np.array(texto.upper().split())
+            print(len(array_texto))
+            print(array_texto)
             
-            # Procesar primeros 3 caracteres (letras)
-            for i in range(0, 3):
-                char = texto_list[i]
-                texto_list[i] = number_to_digit.get(char, char)
+            if len(array_texto) == 3:
+                for i in range(len(array_texto[0])):
+                    char = array_texto[0][i]
+                    if char in number_to_digit:
+                        array_texto[0] = array_texto[0][:i] + number_to_digit[char] + array_texto[0][i+1:]
+                
+                for i in range(len(array_texto[1])):
+                    char = array_texto[1][i]
+                    if char in digit_to_number:
+                        array_texto[1] = array_texto[1][:i] + digit_to_number[char] + array_texto[1][i+1:]
+                
+                for i in range(len(array_texto[2])):
+                    char = array_texto[2][i]
+                    if char in number_to_digit:
+                        array_texto[2] = array_texto[2][:i] + number_to_digit[char] + array_texto[2][i+1:]
+            elif len(array_texto) == 2:
+                for i in range(len(array_texto[0])):
+                    char = array_texto[0][i]
+                    if char in number_to_digit:
+                        array_texto[0] = array_texto[0][:i] + number_to_digit[char] + array_texto[0][i+1:]
+                
+                for i in range(len(array_texto[1])):
+                    char = array_texto[1][i]
+                    if char in digit_to_number:
+                        array_texto[1] = array_texto[1][:i] + digit_to_number[char] + array_texto[1][i+1:]
             
-            # Procesar últimos 3 caracteres (números)
-            for i in range(3, 6):
-                char = texto_list[i]
-                texto_list[i] = digit_to_number.get(char, char)
-            
-            texto_normal = ''.join(texto_list)
-            print(f"Texto corregido: {texto_normal}")
-        elif len(texto_normal) == 7:
-            texto_list = list(texto_normal)
-            
-            # Procesar primeros 3 caracteres (letras)
-            for i in range(0, 2):
-                char = texto_list[i]
-                texto_list[i] = number_to_digit.get(char, char)
-            
-            # Procesar últimos 3 caracteres (números)
-            for i in range(2, 5):
-                char = texto_list[i]
-                texto_list[i] = digit_to_number.get(char, char)
-            
-            for i in range(5, 7):
-                char = texto_list[i]
-                texto_list[i] = number_to_digit.get(char, char)
-            
-            texto_normal = ''.join(texto_list)
-            print(f"Texto corregido: {texto_normal}")
-        
-        return texto_normal
+            corr = " ".join(array_texto)
+            return corr
+        else:
+            corr = " ".join(array_texto)
+            return corr
 
-    def get_plate_search_regions(self, image, plate_position="back"):
-        """
-        Define regiones específicas donde buscar patentes según la posición del vehículo
-        
-        Args:
-            image: Imagen completa
-            plate_position: "front" (delantera) o "back" (trasera)
-        """
-        height, width = image.shape[:2]
-        regions = []
-        
-        # Factor de reducción para hacer los recuadros más pequeños (5% más pequeño)
-        reduction_factor = 0.05
-        
-        if plate_position == "back":
-            # Para patente trasera - buscar en parte inferior central
-            regions = [
-                # Región central inferior (área principal para patentes traseras)
-                {
-                    'name': 'back_central_lower',
-                    'coords': self._reduce_region((int(width * 0.25), int(height * 0.6), 
-                                                int(width * 0.75), int(height * 0.95)), 
-                                                reduction_factor),
-                    'priority': 1.0
-                },
-                # Región central completa (backup)
-                {
-                    'name': 'back_central_full',
-                    'coords': self._reduce_region((int(width * 0.2), int(height * 0.5),
-                                                int(width * 0.8), int(height * 0.9)), 
-                                                reduction_factor),
-                    'priority': 0.8
-                },
-                # Región inferior izquierda (para vehículos que giran)
-                {
-                    'name': 'back_left_lower',
-                    'coords': self._reduce_region((int(width * 0.05), int(height * 0.6),
-                                                int(width * 0.4), int(height * 0.95)), 
-                                                reduction_factor),
-                    'priority': 0.6
-                },
-                # Región inferior derecha
-                {
-                    'name': 'back_right_lower',
-                    'coords': self._reduce_region((int(width * 0.6), int(height * 0.6),
-                                                int(width * 0.95), int(height * 0.95)), 
-                                                reduction_factor),
-                    'priority': 0.6
-                }
-            ]
-            
-        elif plate_position == "front":
-            # Para patente delantera - buscar en parte superior central
-            regions = [
-                # Región central superior (área principal para patentes delanteras)
-                {
-                    'name': 'front_central_upper',
-                    'coords': self._reduce_region((int(width * 0.25), int(height * 0.1),
-                                                int(width * 0.75), int(height * 0.4)), 
-                                                reduction_factor),
-                    'priority': 1.0
-                },
-                # Región central completa (backup)
-                {
-                    'name': 'front_central_full',
-                    'coords': self._reduce_region((int(width * 0.2), int(height * 0.05),
-                                                int(width * 0.8), int(height * 0.45)), 
-                                                reduction_factor),
-                    'priority': 0.8
-                },
-                # Región superior izquierda
-                {
-                    'name': 'front_left_upper',
-                    'coords': self._reduce_region((int(width * 0.05), int(height * 0.1),
-                                                int(width * 0.4), int(height * 0.4)), 
-                                                reduction_factor),
-                    'priority': 0.6
-                },
-                # Región superior derecha
-                {
-                    'name': 'front_right_upper',
-                    'coords': self._reduce_region((int(width * 0.6), int(height * 0.1),
-                                                int(width * 0.95), int(height * 0.4)), 
-                                                reduction_factor),
-                    'priority': 0.6
-                }
-            ]
-        
-        print(f"🎯 Buscando patente en posición: {plate_position.upper()}")
-        print(f"📐 Regiones definidas: {len(regions)}")
-        
-        return regions
 
-    def _reduce_region(self, coords, reduction_factor=0.05):
-        """
-        Reduce una región haciendo el recuadro más pequeño
-        
-        Args:
-            coords: Tupla (x1, y1, x2, y2)
-            reduction_factor: Factor de reducción (0.05 = 5% más pequeño)
-        
-        Returns:
-            Tupla con coordenadas reducidas (x1, y1, x2, y2)
-        """
-        x1, y1, x2, y2 = coords
-        
-        # Calcular dimensiones actuales
-        region_width = x2 - x1
-        region_height = y2 - y1
-        
-        # Calcular reducción en píxeles
-        width_reduction = int(region_width * reduction_factor)
-        height_reduction = int(region_height * reduction_factor)
-        
-        # Aplicar reducción (agrandar desde el centro)
-        new_x1 = x1 + width_reduction
-        new_y1 = y1 + height_reduction
-        new_x2 = x2 - width_reduction
-        new_y2 = y2 - height_reduction
-        
-        # Asegurar que no tengamos dimensiones negativas
-        new_x1 = max(0, new_x1)
-        new_y1 = max(0, new_y1)
-        new_x2 = min(x2, new_x2)  # pero manteniendo dentro de los límites originales
-        new_y2 = min(y2, new_y2)
-        
-        # Asegurar que x2 > x1 y y2 > y1
-        if new_x2 <= new_x1:
-            new_x2 = new_x1 + 10  # mínimo 10 píxeles de ancho
-        if new_y2 <= new_y1:
-            new_y2 = new_y1 + 10  # mínimo 10 píxeles de alto
-        
-        return (new_x1, new_y1, new_x2, new_y2)
-
-    def scan_specific_regions_for_plates(self, image, plate_position="back"):
-        """Escanea regiones específicas donde deberían estar las patentes"""
+    def scan_entire_image_for_plates(self, image):
+        """Escanea toda la imagen en busca de patentes usando múltiples métodos"""
         plate_candidates = []
         
-        regions = self.get_plate_search_regions(image, plate_position)
+        print("🔍 Escaneando toda la imagen para patentes...")
         
-        print(f"🔍 Escaneando {len(regions)} regiones específicas para patentes {plate_position}...")
+        # Método 1: Detección YOLO de objetos
+        yolo_detections = self.detect_objects_yolo(image)
+        plate_candidates.extend(yolo_detections)
+        print(f"   ✅ YOLO encontró {len(yolo_detections)} objetos")
         
-        for region in regions:
-            x1, y1, x2, y2 = region['coords']
-            region_name = region['name']
-            priority = region['priority']
-            
-            # Extraer la región de interés
-            roi = image[y1:y2, x1:x2]
-            
-            if roi.size == 0:
-                continue
-                
-            print(f"   📍 Analizando región: {region_name} ({x1},{y1})-({x2},{y2})")
-            
-            # Aplicar todos los métodos de detección en esta región específica
-            yolo_detections = self.detect_objects_yolo(roi)
-            shape_candidates = self.find_plates_by_shape(roi)
-            color_candidates = self.find_plates_by_color(roi)
-            
-            # Convertir coordenadas relativas a absolutas y ajustar confianza por prioridad
-            for detection in yolo_detections:
-                abs_x = x1 + detection['bbox'][0]
-                abs_y = y1 + detection['bbox'][1]
-                detection['bbox'] = (abs_x, abs_y, detection['bbox'][2], detection['bbox'][3])
-                detection['confidence'] *= priority
-                detection['method'] = f"yolo_{region_name}"
-                plate_candidates.append(detection)
-            
-            for candidate in shape_candidates:
-                abs_x = x1 + candidate['bbox'][0]
-                abs_y = y1 + candidate['bbox'][1]
-                candidate['bbox'] = (abs_x, abs_y, candidate['bbox'][2], candidate['bbox'][3])
-                candidate['confidence'] *= priority
-                candidate['method'] = f"shape_{region_name}"
-                plate_candidates.append(candidate)
-            
-            for candidate in color_candidates:
-                abs_x = x1 + candidate['bbox'][0]
-                abs_y = y1 + candidate['bbox'][1]
-                candidate['bbox'] = (abs_x, abs_y, candidate['bbox'][2], candidate['bbox'][3])
-                candidate['confidence'] *= priority
-                candidate['method'] = f"color_{region_name}"
-                plate_candidates.append(candidate)
-            
-            print(f"      ✅ {region_name}: {len(yolo_detections)} YOLO, {len(shape_candidates)} forma, {len(color_candidates)} color")
+        # Método 2: Búsqueda por características de forma
+        shape_based_candidates = self.find_plates_by_shape(image)
+        plate_candidates.extend(shape_based_candidates)
+        print(f"   ✅ Búsqueda por forma encontró {len(shape_based_candidates)} candidatos")
+        
+        # Método 3: Búsqueda por color
+        color_based_candidates = self.find_plates_by_color(image)
+        plate_candidates.extend(color_based_candidates)
+        print(f"   ✅ Búsqueda por color encontró {len(color_based_candidates)} candidatos")
         
         return plate_candidates
-
-    def scan_entire_image_for_plates(self, image, plate_position="back"):
-        """Método principal modificado - ahora escanea regiones específicas"""
-        return self.scan_specific_regions_for_plates(image, plate_position)
-    
-    def scan_image_grid_comprehensive(self, image, grid_size=1):
-        """Divide la imagen en cuadrícula y en cada celda busca por color y forma"""
-        try:
-            candidates = []
-            height, width = image.shape[:2]
-            
-            cell_height = height // grid_size
-            cell_width = width // grid_size
-            
-            print(f"🔍 Escaneando {grid_size}x{grid_size} cuadrícula ({grid_size*grid_size} celdas)...")
-            
-            for i in range(grid_size):
-                for j in range(grid_size):
-                    # Calcular coordenadas de la celda
-                    y1 = i * cell_height
-                    y2 = min((i + 1) * cell_height, height)
-                    x1 = j * cell_width
-                    x2 = min((j + 1) * cell_width, width)
-                    
-                    # Extraer celda
-                    cell = image[y1:y2, x1:x2]
-                    
-                    if cell.size > 0:
-                        # BUSCAR POR FORMA en esta celda
-                        shape_candidates = self.find_plates_by_shape(cell)
-                        
-                        # BUSCAR POR COLOR en esta celda
-                        color_candidates = self.find_plates_by_color(cell)
-                        
-                        # Procesar candidatos por forma
-                        for candidate in shape_candidates:
-                            # Convertir coordenadas relativas a absolutas
-                            abs_x = x1 + candidate['bbox'][0]
-                            abs_y = y1 + candidate['bbox'][1]
-                            abs_w = candidate['bbox'][2]
-                            abs_h = candidate['bbox'][3]
-                            
-                            candidates.append({
-                                'region': candidate['region'],
-                                'bbox': (abs_x, abs_y, abs_w, abs_h),
-                                'confidence': candidate['confidence'] * 0.9,
-                                'class_name': f"grid_shape_{i}_{j}",
-                                'class_id': -3,
-                                'method': f'grid_shape_{i}_{j}'
-                            })
-                        
-                        # Procesar candidatos por color
-                        for candidate in color_candidates:
-                            # Convertir coordenadas relativas a absolutas
-                            abs_x = x1 + candidate['bbox'][0]
-                            abs_y = y1 + candidate['bbox'][1]
-                            abs_w = candidate['bbox'][2]
-                            abs_h = candidate['bbox'][3]
-                            
-                            candidates.append({
-                                'region': candidate['region'],
-                                'bbox': (abs_x, abs_y, abs_w, abs_h),
-                                'confidence': candidate['confidence'] * 0.9,
-                                'class_name': f"grid_color_{i}_{j}",
-                                'class_id': -4,
-                                'method': f'grid_color_{i}_{j}'
-                            })
-                        
-                        # Mostrar progreso por celda
-                        if shape_candidates or color_candidates:
-                            print(f"   📍 Celda [{i},{j}]: {len(shape_candidates)} forma, {len(color_candidates)} color")
-            
-            return candidates
-            
-        except Exception as e:
-            print(f"❌ Error en escaneo de cuadrícula comprehensivo: {e}")
-            return []
     
     def detect_objects_yolo(self, image):
         """Detección de objetos usando YOLO en toda la imagen"""
@@ -572,10 +325,7 @@ class YOLOLicensePlateDetector:
         except Exception as e:
             print(f"❌ Error en búsqueda por color: {e}")
             return []
-    
-    def scan_image_grid(self, image, grid_size=1):
-        """Método original mantenido por compatibilidad"""
-        return self.scan_image_grid_comprehensive(image, grid_size)
+
     
     def is_potential_license_plate(self, detection, image_shape):
         """Filtra candidatos para identificar patentes potenciales"""
@@ -849,8 +599,8 @@ class YOLOLicensePlateDetector:
                 letters + digits >= 4 and
                 len(clean_text.replace(' ', '')) == letters + digits)
     
-    def detect_plate(self, image, plate_position="back"):
-        """Detección principal - Analiza regiones específicas según posición"""
+    def detect_plate(self, image):
+        """Detección principal - Analiza TODA la imagen"""
         try:
             if self.model is None:
                 print("❌ Modelo YOLO no disponible")
@@ -864,12 +614,12 @@ class YOLOLicensePlateDetector:
             
             self.last_processing_time = current_time
             
-            print(f"🔍 ANALIZANDO REGIONES ESPECÍFICAS para patentes {plate_position.upper()}...")
+            print(f"🔍 ANALIZANDO IMAGEN COMPLETA para patentes...")
             
-            # Escanear regiones específicas según la posición
-            all_candidates = self.scan_specific_regions_for_plates(image, plate_position)
+            # Escanear toda la imagen usando múltiples métodos
+            all_candidates = self.scan_entire_image_for_plates(image)
             
-            print(f"🎯 Encontrados {len(all_candidates)} candidatos en regiones específicas")
+            print(f"🎯 Encontrados {len(all_candidates)} candidatos totales")
             
             plates_found = []
             
@@ -893,11 +643,10 @@ class YOLOLicensePlateDetector:
                             'yolo_confidence': candidate['confidence'],
                             'ocr_confidence': ocr_confidence,
                             'class_name': candidate['class_name'],
-                            'method': candidate['method'],
-                            'position': plate_position
+                            'method': candidate['method']
                         })
                         
-                        print(f"✅ PATENTE DETECTADA ({plate_position.upper()}): {plate_text}")
+                        print(f"✅ PATENTE DETECTADA: {plate_text}")
                         print(f"   📊 Método: {candidate['method']}")
                         print(f"   📊 Confianza: {combined_confidence:.2f}")
                         print(f"   📊 OCR: {ocr_confidence:.2f}")
@@ -914,13 +663,12 @@ class ImageAnalyzer:
         self.yolo_detector = YOLOLicensePlateDetector(use_yolo=use_yolo, yolo_model=yolo_model)
         print("✅ Analizador de imágenes completo inicializado")
 
-    def analyze_image(self, image_path, plate_position="back"):
-        """Analiza una imagen en regiones específicas según la posición de la patente"""
+    def analyze_image(self, image_path):
+        """Analiza una imagen COMPLETA y detecta objetos y patentes"""
         # ✅ TEMPORIZADOR PRINCIPAL - Solo se activa aquí
-        with Timer(f"Procesamiento de imagen: {os.path.basename(image_path)} - Posición: {plate_position}"):
+        with Timer(f"Procesamiento de imagen: {os.path.basename(image_path)}"):
             try:
-                print(f"🔍 ANALIZANDO IMAGEN EN REGIONES ESPECÍFICAS: {image_path}")
-                print(f"🎯 POSICIÓN DE BÚSQUEDA: {plate_position.upper()}")
+                print(f"🔍 ANALIZANDO IMAGEN COMPLETA: {image_path}")
                 
                 # Cargar imagen
                 image = cv2.imread(image_path)
@@ -929,8 +677,8 @@ class ImageAnalyzer:
                 
                 print(f"✅ Imagen cargada: {image.shape[1]}x{image.shape[0]}")
                 
-                # Realizar detección en regiones específicas
-                detections = self.yolo_detector.scan_specific_regions_for_plates(image, plate_position)
+                # Realizar detección COMPLETA de la imagen
+                detections = self.yolo_detector.scan_entire_image_for_plates(image)
                 
                 # Procesar resultados
                 analysis_result = {
@@ -941,8 +689,7 @@ class ImageAnalyzer:
                         "height": image.shape[0],
                         "channels": image.shape[2] if len(image.shape) > 2 else 1
                     },
-                    "scan_methods_used": ["regiones_especificas"],
-                    "plate_position": plate_position,
+                    "scan_methods_used": ["yolo", "shape", "color", "grid"],
                     "total_candidates": len(detections)
                 }
                 
@@ -978,8 +725,7 @@ class ImageAnalyzer:
                                 "yolo_confidence": detection['confidence'],
                                 "combined_confidence": (detection['confidence'] + plate_confidence) / 2,
                                 "bbox": detection['bbox'],
-                                "method": detection['method'],
-                                "position": plate_position
+                                "method": detection['method']
                             })
                     
                     analysis_result["objects_detected"].append(object_info)
@@ -992,7 +738,7 @@ class ImageAnalyzer:
                 return {"error": str(e)}
     
     def create_annotated_image(self, image_path, analysis_result):
-        """Crea una imagen anotada con todas las detecciones y regiones de búsqueda"""
+        """Crea una imagen anotada con todas las detecciones"""
         try:
             image = cv2.imread(image_path)
             if image is None:
@@ -1000,22 +746,6 @@ class ImageAnalyzer:
             
             # Crear copia para anotaciones
             annotated_image = image.copy()
-            
-            # Dibujar regiones de búsqueda
-            plate_position = analysis_result.get("plate_position", "back")
-            regions = self.yolo_detector.get_plate_search_regions(image, plate_position)
-            
-            for region in regions:
-                x1, y1, x2, y2 = region['coords']
-                # Dibujar región de búsqueda en amarillo transparente
-                overlay = annotated_image.copy()
-                cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 255, 255), -1)
-                cv2.addWeighted(overlay, 0.1, annotated_image, 0.9, 0, annotated_image)
-                # Borde de la región
-                cv2.rectangle(annotated_image, (x1, y1), (x2, y2), (0, 255, 255), 2)
-                # Etiqueta de la región
-                cv2.putText(annotated_image, region['name'], (x1, y1 - 10), 
-                          cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
             
             # Dibujar todos los objetos detectados
             for obj in analysis_result.get("objects_detected", []):
@@ -1028,7 +758,7 @@ class ImageAnalyzer:
                     'shape_method_0': (0, 0, 255), # Rojo
                     'shape_method_1': (0, 0, 255),
                     'shape_method_2': (0, 0, 255),
-                    'regiones_especificas': (255, 0, 255) # Magenta
+                    'grid': (255, 255, 0)     # Cian
                 }
                 
                 color = color_map.get(obj.get('method', ''), (128, 128, 128))
@@ -1071,7 +801,7 @@ class ImageAnalyzer:
                               cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
             
             # Agregar leyenda de métodos
-            self.add_legend(annotated_image, color_map, plate_position)
+            self.add_legend(annotated_image, color_map)
             
             print("✅ Imagen anotada creada correctamente")
             return annotated_image
@@ -1080,30 +810,30 @@ class ImageAnalyzer:
             print(f"❌ Error creando imagen anotada: {e}")
             return None
     
-    def add_legend(self, image, color_map, plate_position):
-        """Agrega una leyenda con los colores de los métodos y posición"""
+    def add_legend(self, image, color_map):
+        """Agrega una leyenda con los colores de los métodos"""
         try:
             height, width = image.shape[:2]
             
             # Crear área de leyenda
-            legend_height = 140
+            legend_height = 120
             legend_y = 10
             
             # Fondo semitransparente para la leyenda
             overlay = image.copy()
-            cv2.rectangle(overlay, (10, legend_y), (350, legend_y + legend_height), (0, 0, 0), -1)
+            cv2.rectangle(overlay, (10, legend_y), (300, legend_y + legend_height), (0, 0, 0), -1)
             cv2.addWeighted(overlay, 0.7, image, 0.3, 0, image)
             
             # Título
-            cv2.putText(image, f"LEYENDA - PATENTE {plate_position.upper()}", 
+            cv2.putText(image, "LEYENDA - METODOS DE DETECCION", 
                       (20, legend_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             
             # Items de la leyenda
             legend_items = [
-                ("Regiones de Búsqueda", (0, 255, 255)),
                 ("YOLO (Objetos)", color_map['yolo']),
                 ("Color (Patentes)", color_map['color_based']),
                 ("Forma (Rectangulos)", color_map['shape_method_0']),
+                ("Cuadricula (Busqueda)", color_map['grid']),
                 ("Patente Detectada", (0, 255, 0))
             ]
             
