@@ -43,7 +43,7 @@
                     
                     <div class="mb-3">
                         <label for="id_motion_threshold" class="form-label">Umbral de Movimiento (0-1)</label>
-                        {{ form.motion_threshold }}
+                                {{ form.motion_threshold }}
                         <div class="form-text">
                             Valores más altos = menos sensible al movimiento
                         </div>
@@ -81,18 +81,18 @@
                     </div>
                     <div class="list-group-item">
                         <i class="fas fa-database text-info"></i>
-                        <strong>Detecciones totales:</strong> 
+                        <strong>Mis Detecciones:</strong> 
                         <span class="badge bg-primary">{{ total_detections }}</span>
                     </div>
                     <div class="list-group-item">
                         <i class="fas fa-users text-success"></i>
-                        <strong>Vehículos registrados:</strong> 
+                        <strong>Mis Vehículos:</strong> 
                         <span class="badge bg-success">{{ total_vehicles }}</span>
                     </div>
                     <div class="list-group-item">
                         <i class="fas fa-hdd text-warning"></i>
                         <strong>Espacio usado:</strong> 
-                        <span class="badge bg-warning">{{ storage_used }} MB</span>
+                        <span class="badge bg-warning">{{ storage_used|floatformat:2 }} MB</span>
                     </div>
                 </div>
             </div>
@@ -119,6 +119,67 @@
                 </div>
             </div>
         </div>
+
+        <!-- Estadísticas de limpieza -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6>Información de Limpieza</h6>
+            </div>
+            <div class="card-body">
+                <small class="text-muted">
+                    <i class="fas fa-info-circle"></i>
+                    La limpieza eliminará:
+                    <ul class="mt-2 mb-0">
+                        <li>Detecciones con más de 30 días</li>
+                        <li>Análisis de imágenes antiguos</li>
+                        <li>Solo tus datos personales</li>
+                    </ul>
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de confirmación -->
+<div class="modal fade" id="cleanupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirmar Limpieza</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>¿Estás seguro de que quieres eliminar todas las detecciones y análisis con más de 30 días?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Esta acción no se puede deshacer.</strong>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-danger" onclick="confirmCleanup()">
+                    <i class="fas fa-trash"></i> Eliminar Datos Antiguos
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de resultados -->
+<div class="modal fade" id="resultsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Resultado de la Limpieza</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="resultsContent">
+                <!-- Contenido dinámico -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Aceptar</button>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -143,9 +204,77 @@ function exportData() {
 }
 
 function clearOldData() {
-    if (confirm('¿Eliminar detecciones con más de 30 días?')) {
-        alert('Función de limpieza en desarrollo...');
-    }
+    // Mostrar modal de confirmación
+    const cleanupModal = new bootstrap.Modal(document.getElementById('cleanupModal'));
+    cleanupModal.show();
+}
+
+function confirmCleanup() {
+    // Cerrar modal de confirmación
+    const cleanupModal = bootstrap.Modal.getInstance(document.getElementById('cleanupModal'));
+    cleanupModal.hide();
+    
+    // Mostrar indicador de carga
+    const resultsContent = document.getElementById('resultsContent');
+    resultsContent.innerHTML = `
+        <div class="text-center">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Procesando...</span>
+            </div>
+            <p>Eliminando datos antiguos...</p>
+        </div>
+    `;
+    
+    const resultsModal = new bootstrap.Modal(document.getElementById('resultsModal'));
+    resultsModal.show();
+    
+    // Hacer la petición AJAX
+    fetch('{% url "clear_old_data" %}', {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': '{{ csrf_token }}'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            resultsContent.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle"></i>
+                    <strong>¡Limpieza completada!</strong>
+                    <p class="mb-0 mt-2">${data.message}</p>
+                    <hr>
+                    <small>
+                        <strong>Detecciones eliminadas:</strong> ${data.deleted_detections}<br>
+                        <strong>Análisis eliminados:</strong> ${data.deleted_analyses}
+                    </small>
+                </div>
+            `;
+            // Recargar la página después de 2 segundos para actualizar estadísticas
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            resultsContent.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Error</strong>
+                    <p class="mb-0">${data.error}</p>
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        resultsContent.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Error de conexión</strong>
+                <p class="mb-0">No se pudo completar la operación.</p>
+            </div>
+        `;
+        console.error('Error:', error);
+    });
 }
 
 function showSystemInfo() {
@@ -159,5 +288,11 @@ Características:
 - Interfaz web responsive`;
     alert(info);
 }
+
+// Función para mostrar estadísticas de datos antiguos al cargar la página
+document.addEventListener('DOMContentLoaded', function() {
+    // Podrías agregar aquí una llamada AJAX para mostrar cuántos datos antiguos hay
+    console.log('Página de configuración cargada');
+});
 </script>
 {% endblock %}

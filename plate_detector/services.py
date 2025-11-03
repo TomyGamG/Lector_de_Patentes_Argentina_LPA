@@ -36,7 +36,7 @@ class Timer:
         return False
 
 class YOLOLicensePlateDetector:
-    def __init__(self, use_yolo=True, yolo_model='yolov11n'):
+    def __init__(self, use_yolo=True, yolo_model='yolov10n'):
         self.model = None
         self.detection_count = 0
         self.last_processing_time = 0
@@ -56,7 +56,7 @@ class YOLOLicensePlateDetector:
             from ultralytics import YOLO
             
             # Usar YOLOv8s para mejor precisión
-            self.model = YOLO('yolov11n.pt')
+            self.model = YOLO('yolov10n.pt')
             
             # Verificar dispositivo
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -90,6 +90,7 @@ class YOLOLicensePlateDetector:
             '4': 'A',
             '7': 'T',
             '4': 'V',
+            '6': 'B',
         }
         
         if not texto:
@@ -154,7 +155,85 @@ class YOLOLicensePlateDetector:
         plate_candidates.extend(color_based_candidates)
         print(f"   ✅ Búsqueda por color encontró {len(color_based_candidates)} candidatos")
         
+        # Método 4: División en cuadrícula
+        grid_candidates = self.scan_image_grid(image)
+        plate_candidates.extend(grid_candidates)
+        print(f"   ✅ Escaneo en cuadrícula encontró {len(grid_candidates)} candidatos")
+        
         return plate_candidates
+    
+    def scan_image_grid_comprehensive(self, image, grid_size=1):
+        """Divide la imagen en cuadrícula y en cada celda busca por color y forma"""
+        try:
+            candidates = []
+            height, width = image.shape[:2]
+            
+            cell_height = height // grid_size
+            cell_width = width // grid_size
+            
+            print(f"🔍 Escaneando {grid_size}x{grid_size} cuadrícula ({grid_size*grid_size} celdas)...")
+            
+            for i in range(grid_size):
+                for j in range(grid_size):
+                    # Calcular coordenadas de la celda
+                    y1 = i * cell_height
+                    y2 = min((i + 1) * cell_height, height)
+                    x1 = j * cell_width
+                    x2 = min((j + 1) * cell_width, width)
+                    
+                    # Extraer celda
+                    cell = image[y1:y2, x1:x2]
+                    
+                    if cell.size > 0:
+                        # BUSCAR POR FORMA en esta celda
+                        shape_candidates = self.find_plates_by_shape(cell)
+                        
+                        # BUSCAR POR COLOR en esta celda
+                        color_candidates = self.find_plates_by_color(cell)
+                        
+                        # Procesar candidatos por forma
+                        for candidate in shape_candidates:
+                            # Convertir coordenadas relativas a absolutas
+                            abs_x = x1 + candidate['bbox'][0]
+                            abs_y = y1 + candidate['bbox'][1]
+                            abs_w = candidate['bbox'][2]
+                            abs_h = candidate['bbox'][3]
+                            
+                            candidates.append({
+                                'region': candidate['region'],
+                                'bbox': (abs_x, abs_y, abs_w, abs_h),
+                                'confidence': candidate['confidence'] * 0.9,
+                                'class_name': f"grid_shape_{i}_{j}",
+                                'class_id': -3,
+                                'method': f'grid_shape_{i}_{j}'
+                            })
+                        
+                        # Procesar candidatos por color
+                        for candidate in color_candidates:
+                            # Convertir coordenadas relativas a absolutas
+                            abs_x = x1 + candidate['bbox'][0]
+                            abs_y = y1 + candidate['bbox'][1]
+                            abs_w = candidate['bbox'][2]
+                            abs_h = candidate['bbox'][3]
+                            
+                            candidates.append({
+                                'region': candidate['region'],
+                                'bbox': (abs_x, abs_y, abs_w, abs_h),
+                                'confidence': candidate['confidence'] * 0.9,
+                                'class_name': f"grid_color_{i}_{j}",
+                                'class_id': -4,
+                                'method': f'grid_color_{i}_{j}'
+                            })
+                        
+                        # Mostrar progreso por celda
+                        if shape_candidates or color_candidates:
+                            print(f"   📍 Celda [{i},{j}]: {len(shape_candidates)} forma, {len(color_candidates)} color")
+            
+            return candidates
+            
+        except Exception as e:
+            print(f"❌ Error en escaneo de cuadrícula comprehensivo: {e}")
+            return []
     
     def detect_objects_yolo(self, image):
         """Detección de objetos usando YOLO en toda la imagen"""
@@ -325,7 +404,10 @@ class YOLOLicensePlateDetector:
         except Exception as e:
             print(f"❌ Error en búsqueda por color: {e}")
             return []
-
+    
+    def scan_image_grid(self, image, grid_size=1):
+        """Método original mantenido por compatibilidad"""
+        return self.scan_image_grid_comprehensive(image, grid_size)
     
     def is_potential_license_plate(self, detection, image_shape):
         """Filtra candidatos para identificar patentes potenciales"""
@@ -477,30 +559,6 @@ class YOLOLicensePlateDetector:
         except Exception as e:
             print(f"❌ Error en preprocesamiento EasyOCR: {e}")
             return plate_image
-
-    def clean_ocr_text(self, text):
-        """Limpiar y normalizar texto de OCR"""
-        if not text:
-            return ""
-        
-        # Convertir a mayúsculas y quitar espacios
-        clean = text.upper().replace(' ', '').replace('-', '').replace('.', '')
-        
-        # Corregir caracteres comúnmente confundidos
-        corrections = {
-            '5': 'S', '0': 'O', '1': 'I', '8': 'B',
-            '2': 'Z', '€': 'E', '@': 'A', '§': 'S'
-        }
-        
-        corrected = []
-        for char in clean:
-            if char in corrections:
-                corrected_char = corrections[char]
-                corrected.append(corrected_char)
-            elif char.isalnum():
-                corrected.append(char)
-        
-        return ''.join(corrected)
 
     def recognize_plate_text_tesseract(self, plate_image):
         """Método de fallback con Tesseract (por si EasyOCR falla)"""
@@ -659,7 +717,7 @@ class YOLOLicensePlateDetector:
             return []
         
 class ImageAnalyzer:
-    def __init__(self, use_yolo=True, yolo_model='yolov8s'):
+    def __init__(self, use_yolo=True, yolo_model='yolov10n'):
         self.yolo_detector = YOLOLicensePlateDetector(use_yolo=use_yolo, yolo_model=yolo_model)
         print("✅ Analizador de imágenes completo inicializado")
 
@@ -937,7 +995,7 @@ def save_detection(plate_data, image):
         return None
 
 # ✅ INSTANCIAS GLOBALES
-image_analyzer = ImageAnalyzer(use_yolo=True, yolo_model='yolov8s')
+image_analyzer = ImageAnalyzer(use_yolo=True, yolo_model='yolov10n')
 motion_detector = MotionDetector()
 
 print("🎯 Sistema de análisis con YOLO listo!")

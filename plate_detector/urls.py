@@ -16,4 +16,6 @@ urlpatterns = [
     path('upload-analyze/', views.upload_and_analyze_image, name='upload_analyze'),
     path('analysis/<int:analysis_id>/', views.analysis_detail_view, name='analysis_detail'),
     path('analysis/<int:analysis_id>/delete/', views.delete_analysis_view, name='delete_analysis'),
+    path('register/', views.register, name='register'),
+    path('settings/clear-old-data/', views.clear_old_data, name='clear_old_data'),
 ]

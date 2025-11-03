@@ -11,9 +11,11 @@ import threading
 import time
 import json
 from .models import PlateDetection, Vehicle, Client, DetectionSettings, ImageAnalysis
-from .forms import LoginForm, VehicleForm, ClientForm, SettingsForm, ImageAnalysisForm
+from .forms import CustomUserCreationForm, LoginForm, VehicleForm, ClientForm, SettingsForm, ImageAnalysisForm, UserCreationForm
 from .services import YOLOLicensePlateDetector, ImageAnalyzer, MotionDetector, save_detection, image_analyzer
 import os
+from django.utils import timezone
+from datetime import timedelta
 
 # Variables globales para la cámara
 camera_running = False
@@ -30,6 +32,11 @@ class VideoCamera:
         self.detection_interval = 5
         self.last_motion_check = 0
         self.debug_info = "Inicializando..."
+        self.current_user = None  # Agregar para almacenar usuario
+        
+    def set_user(self, user):
+        """Establecer el usuario actual para las detecciones"""
+        self.current_user = user
         
     def get_frame(self):
         try:
@@ -51,9 +58,10 @@ class VideoCamera:
                     plates = self.detector.detect_plate(frame)
                     if plates:
                         self.last_detection = current_time
+                        # Pasar el usuario a save_detection
                         threading.Thread(
                             target=save_detection, 
-                            args=(plates[0], frame.copy()),
+                            args=(plates[0], frame.copy(), self.current_user),  # Agregar usuario
                             daemon=True
                         ).start()
                         self.debug_info = f"Patente detectada: {plates[0]['text']}"
@@ -87,6 +95,60 @@ def gen(camera):
             yield (b'--frame\r\n'b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')
         time.sleep(0.1)
 
+
+@login_required
+def clear_old_data(request):
+    """Elimina detecciones con más de 30 días"""
+    if request.method == 'POST':
+        try:
+            # Calcular la fecha límite (30 días atrás)
+            cutoff_date = timezone.now() - timedelta(days=30)
+            
+            # Filtrar detecciones antiguas del usuario actual
+            old_detections = PlateDetection.objects.filter(
+                user=request.user,
+                detected_at__lt=cutoff_date
+            )
+            
+            # Contar antes de eliminar
+            count_before = old_detections.count()
+            
+            # Eliminar las detecciones
+            old_detections.delete()
+            
+            # También eliminar análisis de imágenes antiguos
+            old_analyses = ImageAnalysis.objects.filter(
+                user=request.user,
+                uploaded_at__lt=cutoff_date
+            )
+            analyses_count = old_analyses.count()
+            old_analyses.delete()
+            
+            messages.success(
+                request, 
+                f'✅ Se eliminaron {count_before} detecciones y {analyses_count} análisis con más de 30 días.'
+            )
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Se eliminaron {count_before} detecciones y {analyses_count} análisis antiguos.',
+                    'deleted_detections': count_before,
+                    'deleted_analyses': analyses_count
+                })
+                
+        except Exception as e:
+            error_msg = f'❌ Error al limpiar datos: {str(e)}'
+            messages.error(request, error_msg)
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return JsonResponse({
+                    'success': False,
+                    'error': error_msg
+                })
+    
+    return redirect('settings')
+
 @gzip.gzip_page
 def video_feed(request):
     global camera_running, camera
@@ -98,6 +160,10 @@ def video_feed(request):
                 camera = VideoCamera(camera_index)
             except:
                 camera = VideoCamera(0)
+        
+        # Configurar el usuario actual en la cámara
+        if request.user.is_authenticated:
+            camera.set_user(request.user)
             
         return StreamingHttpResponse(gen(camera), content_type="multipart/x-mixed-replace;boundary=frame")
     except Exception as e:
@@ -121,18 +187,51 @@ def user_login(request):
         form = LoginForm()
     return render(request, 'login.html', {'form': form})
 
+def register(request):
+    if request.method == 'POST':
+        form = CustomUserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            
+            # Autenticar y loguear al usuario automáticamente
+            username = form.cleaned_data.get('username')
+            password = form.cleaned_data.get('password1')
+            user = authenticate(username=username, password=password)
+            
+            if user is not None:
+                login(request, user)
+                messages.success(request, f'¡Cuenta creada exitosamente! Bienvenido, {user.first_name}.')
+                return redirect('dashboard')
+        else:
+            messages.error(request, 'Por favor corrige los errores en el formulario.')
+    else:
+        form = CustomUserCreationForm()
+    
+    return render(request, 'register.html', {'form': form})
+
+# Vista de login personalizada (opcional)
+from django.contrib.auth.views import LoginView
+
+class CustomLoginView(LoginView):
+    template_name = 'login.html'
+    
+    def form_valid(self, form):
+        messages.success(self.request, f'¡Bienvenido de nuevo, {form.get_user().first_name}!')
+        return super().form_valid(form)
+
 def user_logout(request):
     logout(request)
     return redirect('login')
 
 @login_required
 def dashboard(request):
-    total_detections = PlateDetection.objects.count()
-    client_detections = PlateDetection.objects.filter(is_client=True).count()
-    recent_detections = PlateDetection.objects.all()[:5]
-    
-    # Crear cliente si no existe
+    # Obtener o crear el cliente asociado al usuario
     client, created = Client.objects.get_or_create(user=request.user)
+    
+    # Filtrar detecciones solo del usuario actual
+    total_detections = PlateDetection.objects.filter(user=request.user).count()
+    client_detections = PlateDetection.objects.filter(user=request.user, is_client=True).count()
+    recent_detections = PlateDetection.objects.filter(user=request.user).order_by('-detected_at')[:5]
     
     context = {
         'total_detections': total_detections,
@@ -148,13 +247,23 @@ def detection_view(request):
 
 @login_required
 def plate_list(request):
-    plates = PlateDetection.objects.all().order_by('-detected_at')[:50]
-    return render(request, 'plate_list.html', {'plates': plates})
+    # Filtrar solo las detecciones del usuario actual
+    detections = PlateDetection.objects.filter(user=request.user).order_by('-detected_at')
+    
+    context = {
+        'detections': detections,
+    }
+    return render(request, 'plate_list.html', context)
 
 @login_required
 def start_detection(request):
-    global camera_running
+    global camera_running, camera
     camera_running = True
+    
+    # Configurar el usuario en la cámara
+    if camera is not None:
+        camera.set_user(request.user)
+    
     return JsonResponse({'status': 'Detección iniciada'})
 
 @login_required
@@ -210,7 +319,7 @@ def settings_view(request):
 def image_analysis_view(request):
     """Vista para análisis de imágenes"""
     form = ImageAnalysisForm()
-    analyses = ImageAnalysis.objects.all().order_by('-uploaded_at')[:10]
+    analyses = ImageAnalysis.objects.filter(user=request.user).order_by('-uploaded_at')[:10]  # Filtrar por usuario
     
     context = {
         'form': form,
@@ -227,7 +336,10 @@ def upload_and_analyze_image(request):
         if form.is_valid():
             try:
                 # Guardar la imagen primero para obtener la ruta
-                image_analysis = form.save()
+                image_analysis = form.save(commit=False)
+                image_analysis.user = request.user  # Asignar usuario
+                image_analysis.save()
+                
                 print(f"✅ Imagen guardada en: {image_analysis.image.path}")
                 
                 # Verificar que el archivo existe
@@ -256,6 +368,15 @@ def upload_and_analyze_image(request):
                     best_plate = max(license_plates, key=lambda x: x['combined_confidence'])
                     image_analysis.detected_plate = best_plate['text']
                     image_analysis.confidence = best_plate['combined_confidence']
+                    
+                    # Crear también una PlateDetection
+                    PlateDetection.objects.create(
+                        user=request.user,
+                        plate_number=best_plate['text'],
+                        confidence=best_plate['combined_confidence'],
+                        image=image_analysis.image,
+                        is_client=False  # Puedes ajustar esta lógica
+                    )
                 
                 image_analysis.save()
                 
@@ -305,11 +426,11 @@ def replace_filter(value, old, new):
     return value.replace(old, new)
 
 @login_required
-# Registrar el filtro en el contexto
 def analysis_detail_view(request, analysis_id):
     """Vista detallada de un análisis específico"""
     try:
-        analysis = ImageAnalysis.objects.get(id=analysis_id)
+        # Filtrar solo análisis del usuario actual
+        analysis = ImageAnalysis.objects.get(id=analysis_id, user=request.user)
         
         # Procesar la URL para la imagen anotada
         image_url = analysis.image.url
@@ -317,18 +438,31 @@ def analysis_detail_view(request, analysis_id):
         annotated_url = annotated_url.replace('.jpeg', '_annotated.jpeg')
         annotated_url = annotated_url.replace('.png', '_annotated.png')
         
+        # Verificar si la imagen anotada existe físicamente
+        import os
+        from django.conf import settings
+        
+        # Obtener la ruta física del archivo anotado
+        original_path = analysis.image.path
+        name, ext = os.path.splitext(original_path)
+        annotated_path = f"{name}_annotated{ext}"
+        annotated_exists = os.path.exists(annotated_path)
+        
         context = {
             'analysis': analysis,
             'objects_detected': analysis.analysis_result.get('objects_detected', []),
             'license_plates': analysis.analysis_result.get('license_plates', []),
             'image_info': analysis.analysis_result.get('image_info', {}),
             'analysis_result': analysis.analysis_result,
-            'annotated_image_url': annotated_url
+            'annotated_image_url': annotated_url,
+            'annotated_exists': annotated_exists,  # Nueva variable
         }
         return render(request, 'analysis_detail.html', context)
     except ImageAnalysis.DoesNotExist:
         messages.error(request, 'Análisis no encontrado')
         return redirect('image_analysis')
+    
+
 
 @login_required
 def delete_analysis_view(request, analysis_id):

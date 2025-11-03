@@ -22,22 +22,72 @@
     <div class="col-md-8">
         <div class="card">
             <div class="card-header bg-primary text-white">
-                <h5 class="mb-0"><i class="fas fa-image"></i> Imagen Analizada</h5>
-            </div>
-            <div class="card-body text-center">
-                <img src="{{ analysis.image.url }}" class="img-fluid rounded" alt="Imagen analizada" 
-                     style="max-height: 500px;">
-                
-                <div class="mt-3">
+                <h5 class="mb-0">
+                    <i class="fas fa-image"></i> 
                     {% if annotated_exists %}
-                    <a href="{{ annotated_image_url }}" target="_blank" class="btn btn-outline-primary btn-sm">
-                        <i class="fas fa-search"></i> Ver Imagen con Anotaciones
-                    </a>
+                        Comparación de Imágenes
+                    {% else %}
+                        Imagen Analizada
                     {% endif %}
-                    <a href="{{ analysis.image.url }}" target="_blank" class="btn btn-outline-secondary btn-sm">
-                        <i class="fas fa-download"></i> Imagen Original
-                    </a>
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if annotated_exists %}
+                <!-- Mostrar ambas imágenes lado a lado -->
+                <div class="row">
+                    <div class="col-md-6 text-center">
+                        <h6 class="text-muted mb-3">Imagen Original</h6>
+                        <img src="{{ analysis.image.url }}" class="img-fluid rounded shadow-sm" 
+                             alt="Imagen original" style="max-height: 400px; border: 2px solid #dee2e6;">
+                        <div class="mt-2">
+                            <small class="text-muted">Sin procesar</small>
+                        </div>
+                    </div>
+                    <div class="col-md-6 text-center">
+                        <h6 class="text-muted mb-3">Imagen Anotada</h6>
+                        <img src="{{ annotated_image_url }}" class="img-fluid rounded shadow-sm" 
+                             alt="Imagen anotada" style="max-height: 400px; border: 2px solid #007bff;">
+                        <div class="mt-2">
+                            <small class="text-primary">
+                                <i class="fas fa-search"></i> Con detecciones YOLO
+                            </small>
+                        </div>
+                    </div>
                 </div>
+                
+                <div class="row mt-4">
+                    <div class="col-12 text-center">
+                        <div class="btn-group" role="group">
+                            <a href="{{ analysis.image.url }}" target="_blank" class="btn btn-outline-secondary">
+                                <i class="fas fa-download"></i> Descargar Original
+                            </a>
+                            <a href="{{ annotated_image_url }}" target="_blank" class="btn btn-outline-primary">
+                                <i class="fas fa-download"></i> Descargar Anotada
+                            </a>
+                            <button type="button" class="btn btn-outline-info" onclick="toggleImageView()">
+                                <i class="fas fa-exchange-alt"></i> Cambiar Vista
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <!-- Mostrar solo la imagen original si no hay anotada -->
+                <div class="text-center">
+                    <img src="{{ analysis.image.url }}" class="img-fluid rounded" 
+                         alt="Imagen analizada" style="max-height: 500px;">
+                    
+                    <div class="mt-3">
+                        <a href="{{ analysis.image.url }}" target="_blank" class="btn btn-outline-secondary">
+                            <i class="fas fa-download"></i> Descargar Imagen Original
+                        </a>
+                        {% if analysis.plate_detected %}
+                        <span class="badge bg-warning ms-2">
+                            <i class="fas fa-exclamation-triangle"></i> Imagen anotada no disponible
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
         
@@ -48,29 +98,39 @@
             </div>
             <div class="card-body">
                 <div class="row text-center">
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h3 class="text-primary">{{ objects_detected|length }}</h3>
-                                <p class="mb-0">Objetos Analizados</p>
+                                <p class="mb-0">Objetos Detectados</p>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h3 class="{% if analysis.plate_detected %}text-success{% else %}text-secondary{% endif %}">
                                     {{ license_plates|length }}
                                 </h3>
-                                <p class="mb-0">Patentes Detectadas</p>
+                                <p class="mb-0">Patentes</p>
                             </div>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <div class="card bg-light">
                             <div class="card-body">
                                 <h3 class="text-info">{{ analysis_result.scan_methods_used|length }}</h3>
-                                <p class="mb-0">Métodos Utilizados</p>
+                                <p class="mb-0">Métodos</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h3 class="{% if annotated_exists %}text-success{% else %}text-warning{% endif %}">
+                                    {% if annotated_exists %}Sí{% else %}No{% endif %}
+                                </h3>
+                                <p class="mb-0">Anotaciones</p>
                             </div>
                         </div>
                     </div>
@@ -90,7 +150,8 @@
                         <strong>Fecha:</strong> {{ analysis.uploaded_at|date:"d/m/Y H:i" }}
                     </div>
                     <div class="list-group-item">
-                        <strong>Archivo:</strong> {{ analysis.image.name }}
+                        <strong>Archivo:</strong> 
+                        <small class="text-muted">{{ analysis.image.name|slice:"20:" }}...</small>
                     </div>
                     <div class="list-group-item">
                         <strong>Dimensiones:</strong> {{ image_info.width }} × {{ image_info.height }} px
@@ -108,8 +169,12 @@
                         {% endif %}
                     </div>
                     <div class="list-group-item">
-                        <strong>Candidatos totales:</strong> 
-                        <span class="badge bg-info">{{ analysis_result.total_candidates }}</span>
+                        <strong>Imagen anotada:</strong> 
+                        {% if annotated_exists %}
+                            <span class="badge bg-success">Disponible</span>
+                        {% else %}
+                            <span class="badge bg-warning">No disponible</span>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -137,6 +202,29 @@
             </div>
         </div>
         {% endif %}
+
+        <!-- Acciones rápidas -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-bolt"></i> Acciones Rápidas</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    {% if annotated_exists %}
+                    <a href="{{ annotated_image_url }}" target="_blank" class="btn btn-outline-primary">
+                        <i class="fas fa-external-link-alt"></i> Abrir Imagen Anotada
+                    </a>
+                    {% endif %}
+                    <a href="{{ analysis.image.url }}" download class="btn btn-outline-secondary">
+                        <i class="fas fa-download"></i> Descargar Original
+                    </a>
+                    <a href="{% url 'delete_analysis' analysis.id %}" class="btn btn-outline-danger"
+                       onclick="return confirm('¿Estás seguro de eliminar este análisis?')">
+                        <i class="fas fa-trash"></i> Eliminar Análisis
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -174,7 +262,7 @@
                                 <td>
                                     <div class="progress" style="height: 20px;">
                                         <div class="progress-bar {% if obj.confidence > 0.7 %}bg-success{% elif obj.confidence > 0.4 %}bg-warning{% else %}bg-danger{% endif %}" 
-                                             style="width: {{ obj.confidence|floatformat:2 }}%">
+                                             style="width: {% widthratio obj.confidence 1 100 %}%">
                                             {{ obj.confidence|floatformat:3 }}
                                         </div>
                                     </div>
@@ -216,30 +304,47 @@
 
 <div class="row mt-4">
     <div class="col-md-12">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="fas fa-code"></i> Datos JSON Completos</h5>
-            </div>
-            <div class="card-body">
-                <pre style="background: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; max-height: 400px; font-size: 12px;"><code>{{ analysis.analysis_result }}</code></pre>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="row mt-4">
-    <div class="col-md-12">
         <div class="d-flex justify-content-between">
             <a href="{% url 'image_analysis' %}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Volver al Análisis
             </a>
             <div>
+                {% if annotated_exists %}
+                <a href="{{ annotated_image_url }}" target="_blank" class="btn btn-primary">
+                    <i class="fas fa-external-link-alt"></i> Ver Imagen Anotada
+                </a>
+                {% endif %}
                 <a href="{% url 'delete_analysis' analysis.id %}" class="btn btn-danger"
-                   onclick="return confirm('¿Eliminar este análisis?')">
+                   onclick="return confirm('¿Estás seguro de eliminar este análisis?')">
                     <i class="fas fa-trash"></i> Eliminar Análisis
                 </a>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleImageView() {
+    const originalImg = document.querySelector('.col-md-6:first-child img');
+    const annotatedImg = document.querySelector('.col-md-6:last-child img');
+    
+    // Intercambiar bordes para indicar cuál está activa
+    const originalBorder = originalImg.style.border;
+    const annotatedBorder = annotatedImg.style.border;
+    
+    originalImg.style.border = annotatedBorder;
+    annotatedImg.style.border = originalBorder;
+}
+
+// Si hay imágenes anotadas, mostrar un tooltip informativo
+document.addEventListener('DOMContentLoaded', function() {
+    {% if annotated_exists %}
+    console.log('Imagen anotada disponible');
+    {% else %}
+    console.log('Imagen anotada no disponible');
+    {% endif %}
+});
+</script>
 {% endblock %}

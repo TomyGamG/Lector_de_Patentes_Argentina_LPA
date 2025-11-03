@@ -28,7 +28,9 @@ class Vehicle(models.Model):
     def __str__(self):
         return f"{self.plate_number} - {self.brand} {self.model}"
 
+
 class PlateDetection(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)  # Agregar esta línea
     plate_number = models.CharField(max_length=20)
     confidence = models.FloatField(default=0.0)
     image = models.ImageField(upload_to=plate_image_path)
@@ -58,6 +60,7 @@ def analyzed_image_path(instance, filename):
     return f'analyzed/{datetime.now().strftime("%Y/%m/%d")}/{filename}'
 
 class ImageAnalysis(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     image = models.ImageField(upload_to=analyzed_image_path)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     analysis_result = models.JSONField(default=dict, blank=True)  # Para guardar resultados de YOLO
