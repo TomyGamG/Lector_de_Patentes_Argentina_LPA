@@ -503,7 +503,7 @@ class YOLOLicensePlateDetector:
             
             best_text, best_conf = "", 0.0
             for _, text, conf in results:
-                cleaned_text = self.corregir_patente(text)
+                cleaned_text = text
                 if self.is_valid_plate_format(cleaned_text) and conf > best_conf:
                     best_text, best_conf = cleaned_text, conf
             
