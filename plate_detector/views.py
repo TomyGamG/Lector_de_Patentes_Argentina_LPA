@@ -11,11 +11,12 @@ import threading
 import time
 import json
 from .models import PlateDetection, Vehicle, Client, DetectionSettings, ImageAnalysis
-from .forms import CustomUserCreationForm, LoginForm, VehicleForm, ClientForm, SettingsForm, ImageAnalysisForm, UserCreationForm
+from .forms import CustomUserCreationForm, LoginForm, VehicleForm, ClientForm, SettingsForm, ImageAnalysisForm
 from .services import YOLOLicensePlateDetector, ImageAnalyzer, MotionDetector, save_detection, image_analyzer
 import os
 from django.utils import timezone
 from datetime import timedelta
+from datetime import datetime
 
 # Variables globales para la cámara
 camera_running = False
@@ -37,6 +38,7 @@ class VideoCamera:
     def set_user(self, user):
         """Establecer el usuario actual para las detecciones"""
         self.current_user = user
+        print(f"👤 Usuario establecido en cámara: {user.username if user else 'None'}")
         
     def get_frame(self):
         try:
@@ -73,9 +75,11 @@ class VideoCamera:
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.putText(frame, self.debug_info, (10, 60), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-            cv2.putText(frame, f"Movimientos: {self.motion_detector.motion_count}", (10, 90), 
+            cv2.putText(frame, f"Usuario: {self.current_user.username if self.current_user else 'None'}", (10, 90), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-            cv2.putText(frame, f"Patentes: {self.detector.detection_count}", (10, 120), 
+            cv2.putText(frame, f"Movimientos: {self.motion_detector.motion_count}", (10, 120), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+            cv2.putText(frame, f"Patentes: {self.detector.detection_count}", (10, 150), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
             
             # Codificar frame
@@ -175,7 +179,8 @@ def user_login(request):
         return redirect('dashboard')
         
     if request.method == 'POST':
-        form = LoginForm(request, data=request.POST)
+        # ✅ CORREGIDO: Pasar los datos correctamente al formulario
+        form = LoginForm(data=request.POST)
         if form.is_valid():
             username = form.cleaned_data.get('username')
             password = form.cleaned_data.get('password')
@@ -228,17 +233,197 @@ def dashboard(request):
     # Obtener o crear el cliente asociado al usuario
     client, created = Client.objects.get_or_create(user=request.user)
     
-    # Filtrar detecciones solo del usuario actual
-    total_detections = PlateDetection.objects.filter(user=request.user).count()
+    # Fecha actual
+    today = timezone.now().date()
+    now = timezone.now()
+    
+    # KPIs principales
+    total_analyses = ImageAnalysis.objects.filter(user=request.user).count()
+    
+    # Patentes detectadas hoy
+    today_plates = ImageAnalysis.objects.filter(
+        user=request.user,
+        uploaded_at__date=today,
+        plate_detected=True
+    ).count()
+    
+    # Tasa de éxito general
+    successful_detections = ImageAnalysis.objects.filter(
+        user=request.user,
+        plate_detected=True
+    ).count()
+    failed_detections = total_analyses - successful_detections
+    success_rate = round((successful_detections / total_analyses * 100) if total_analyses > 0 else 0, 1)
+    
+    # Tiempo promedio de procesamiento (simulado - ajustar según tu lógica)
+    avg_processing_time = 1.8
+    
+    # Detecciones de clientes
     client_detections = PlateDetection.objects.filter(user=request.user, is_client=True).count()
-    recent_detections = PlateDetection.objects.filter(user=request.user).order_by('-detected_at')[:5]
+    total_vehicles = Vehicle.objects.filter(client=client).count()
+    
+    # Análisis recientes con información de cliente
+    recent_analyses = []
+    analyses = ImageAnalysis.objects.filter(user=request.user).order_by('-uploaded_at')[:8]
+    
+    for analysis in analyses:
+        is_client = False
+        vehicle = None
+        
+        if analysis.detected_plate:
+            try:
+                vehicle = Vehicle.objects.filter(
+                    client=client, 
+                    plate_number=analysis.detected_plate
+                ).first()
+                if vehicle:
+                    is_client = True
+            except Vehicle.DoesNotExist:
+                pass
+        
+        analysis.is_client = is_client
+        analysis.vehicle = vehicle
+        recent_analyses.append(analysis)
+    
+    # Métricas en tiempo real
+    last_hour = now - timedelta(hours=1)
+    last_hour_analyses = ImageAnalysis.objects.filter(
+        user=request.user,
+        uploaded_at__gte=last_hour
+    ).count()
+    
+    # Esta semana
+    start_of_week = today - timedelta(days=today.weekday())
+    this_week_plates = ImageAnalysis.objects.filter(
+        user=request.user,
+        uploaded_at__date__gte=start_of_week,
+        plate_detected=True
+    ).count()
+    
+    # Tasa de éxito hoy
+    today_successful = ImageAnalysis.objects.filter(
+        user=request.user,
+        uploaded_at__date=today,
+        plate_detected=True
+    ).count()
+    today_total = ImageAnalysis.objects.filter(
+        user=request.user,
+        uploaded_at__date=today
+    ).count()
+    today_success_rate = round((today_successful / today_total * 100) if today_total > 0 else 0, 1)
+    
+    # Mejor hora para detección (simulado)
+    best_hour = "14:00-15:00"
+    
+    # Datos para gráficos
+    import json
+    from collections import Counter
+    
+    # Gráfico de series de tiempo - Por hora (hoy)
+    hourly_data = [0] * 24
+    hourly_labels = [f"{h:02d}:00" for h in range(24)]
+    
+    today_analyses_hourly = ImageAnalysis.objects.filter(
+        user=request.user,
+        uploaded_at__date=today,
+        plate_detected=True
+    )
+    
+    for analysis in today_analyses_hourly:
+        hour = analysis.uploaded_at.hour
+        hourly_data[hour] += 1
+    
+    # Gráfico de series de tiempo - Por día (últimos 7 días)
+    daily_data = []
+    daily_labels = []
+    
+    for i in range(6, -1, -1):
+        date = today - timedelta(days=i)
+        daily_labels.append(date.strftime('%d/%m'))
+        analyses_count = ImageAnalysis.objects.filter(
+            user=request.user,
+            uploaded_at__date=date,
+            plate_detected=True
+        ).count()
+        daily_data.append(analyses_count)
+    
+    # Gráfico de series de tiempo - Por semana (últimas 8 semanas)
+    weekly_data = []
+    weekly_labels = []
+    
+    for i in range(7, -1, -1):
+        week_start = today - timedelta(weeks=i+1, days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+        weekly_labels.append(f"Sem {i+1}")
+        analyses_count = ImageAnalysis.objects.filter(
+            user=request.user,
+            uploaded_at__date__range=[week_start, week_end],
+            plate_detected=True
+        ).count()
+        weekly_data.append(analyses_count)
+    
+    # Gráfico circular - Distribución de resultados
+    distribution_data = [successful_detections, failed_detections]
+    
+    # Gráfico de áreas - Tendencias semanales
+    trend_labels = []
+    trend_successful = []
+    trend_failed = []
+    
+    for i in range(3, -1, -1):
+        week_start = today - timedelta(weeks=i+1, days=today.weekday())
+        week_end = week_start + timedelta(days=6)
+        trend_labels.append(f"W{i+1}")
+        
+        successful = ImageAnalysis.objects.filter(
+            user=request.user,
+            uploaded_at__date__range=[week_start, week_end],
+            plate_detected=True
+        ).count()
+        
+        failed = ImageAnalysis.objects.filter(
+            user=request.user,
+            uploaded_at__date__range=[week_start, week_end],
+            plate_detected=False
+        ).count()
+        
+        trend_successful.append(successful)
+        trend_failed.append(failed)
     
     context = {
-        'total_detections': total_detections,
+        # KPIs principales
+        'today_plates': today_plates,
+        'success_rate': success_rate,
+        'avg_processing_time': avg_processing_time,
+        'total_analyses': total_analyses,
+        
+        # Estadísticas adicionales
+        'successful_detections': successful_detections,
+        'failed_detections': failed_detections,
         'client_detections': client_detections,
-        'recent_detections': recent_detections,
+        'total_vehicles': total_vehicles,
+        'last_hour_analyses': last_hour_analyses,
+        'this_week_plates': this_week_plates,
+        'today_success_rate': today_success_rate,
+        'best_hour': best_hour,
+        
+        # Datos recientes
+        'recent_analyses': recent_analyses,
         'client': client,
+        
+        # Datos para gráficos
+        'hourly_labels': json.dumps(hourly_labels),
+        'hourly_data': json.dumps(hourly_data),
+        'daily_labels': json.dumps(daily_labels),
+        'daily_data': json.dumps(daily_data),
+        'weekly_labels': json.dumps(weekly_labels),
+        'weekly_data': json.dumps(weekly_data),
+        'distribution_data': json.dumps(distribution_data),
+        'trend_labels': json.dumps(trend_labels),
+        'trend_successful': json.dumps(trend_successful),
+        'trend_failed': json.dumps(trend_failed),
     }
+    
     return render(request, 'dashboard.html', context)
 
 @login_required
@@ -247,11 +432,85 @@ def detection_view(request):
 
 @login_required
 def plate_list(request):
-    # Filtrar solo las detecciones del usuario actual
+    # Obtener detecciones de PlateDetection
     detections = PlateDetection.objects.filter(user=request.user).order_by('-detected_at')
     
+    # Obtener análisis de imágenes que tengan patentes detectadas
+    analyses_with_plates = ImageAnalysis.objects.filter(
+        user=request.user,
+        plate_detected=True
+    ).exclude(detected_plate__isnull=True).exclude(detected_plate='').order_by('-uploaded_at')
+    
+    # Combinar ambas listas evitando duplicados
+    all_plates = []
+    processed_plates = set()  # Para evitar duplicados
+    
+    # Primero agregar detecciones de PlateDetection
+    for detection in detections:
+        plate_key = f"{detection.plate_number}_{detection.detected_at.strftime('%Y%m%d%H%M')}"
+        
+        if plate_key not in processed_plates:
+            all_plates.append({
+                'type': 'detection',
+                'object': detection,
+                'plate_number': detection.plate_number,
+                'date': detection.detected_at,
+                'confidence': detection.confidence,
+                'image': detection.image,
+                'is_client': detection.is_client,
+                'vehicle': detection.vehicle,
+                'source': 'Detección en Tiempo Real',
+                'unique_key': plate_key
+            })
+            processed_plates.add(plate_key)
+    
+    # Luego agregar análisis de ImageAnalysis que no estén duplicados
+    for analysis in analyses_with_plates:
+        plate_key = f"{analysis.detected_plate}_{analysis.uploaded_at.strftime('%Y%m%d%H%M')}"
+        
+        # Verificar si ya existe una detección similar (misma patente en mismo minuto)
+        if plate_key not in processed_plates:
+            # Verificar si es cliente
+            is_client = False
+            vehicle = None
+            if analysis.detected_plate:
+                try:
+                    client_obj = Client.objects.get(user=request.user)
+                    vehicle = Vehicle.objects.filter(
+                        client=client_obj, 
+                        plate_number=analysis.detected_plate
+                    ).first()
+                    if vehicle:
+                        is_client = True
+                except (Client.DoesNotExist, Vehicle.DoesNotExist):
+                    pass
+            
+            all_plates.append({
+                'type': 'analysis',
+                'object': analysis,
+                'plate_number': analysis.detected_plate,
+                'date': analysis.uploaded_at,
+                'confidence': analysis.confidence,
+                'image': analysis.image,
+                'is_client': is_client,
+                'vehicle': vehicle,
+                'source': 'Análisis de Imagen',
+                'unique_key': plate_key
+            })
+            processed_plates.add(plate_key)
+    
+    # Ordenar por fecha (más reciente primero)
+    all_plates.sort(key=lambda x: x['date'], reverse=True)
+    
+    # Contadores reales sin duplicados
+    detections_count = len([p for p in all_plates if p['type'] == 'detection'])
+    analyses_count = len([p for p in all_plates if p['type'] == 'analysis'])
+    
     context = {
-        'detections': detections,
+        'all_plates': all_plates,
+        'detections_count': detections_count,
+        'analyses_count': analyses_count,
+        'total_count': len(all_plates)
     }
     return render(request, 'plate_list.html', context)
 
@@ -369,14 +628,30 @@ def upload_and_analyze_image(request):
                     image_analysis.detected_plate = best_plate['text']
                     image_analysis.confidence = best_plate['combined_confidence']
                     
-                    # Crear también una PlateDetection
-                    PlateDetection.objects.create(
+                    # VERIFICAR SI ES CLIENTE antes de crear PlateDetection
+                    is_client = False
+                    vehicle = None
+                    try:
+                        client = Client.objects.get(user=request.user)
+                        vehicle = Vehicle.objects.filter(
+                            client=client, 
+                            plate_number=best_plate['text']
+                        ).first()
+                        if vehicle:
+                            is_client = True
+                            print(f"✅ PATENTE DE CLIENTE DETECTADA: {best_plate['text']}")
+                    except Client.DoesNotExist:
+                        print(f"❌ Cliente no encontrado para usuario {request.user.username}")
+                    
+                    # Crear PlateDetection con la información correcta
+                    '''PlateDetection.objects.create(
                         user=request.user,
                         plate_number=best_plate['text'],
                         confidence=best_plate['combined_confidence'],
                         image=image_analysis.image,
-                        is_client=False  # Puedes ajustar esta lógica
-                    )
+                        is_client=is_client,
+                        vehicle=vehicle
+                    )'''
                 
                 image_analysis.save()
                 
@@ -399,8 +674,19 @@ def upload_and_analyze_image(request):
                 total_plates = len(license_plates)
                 
                 if total_plates > 0:
-                    messages.success(request, 
-                        f'✅ Análisis completado: {total_objects} objetos analizados, {total_plates} patente(s) detectada(s)')
+                    # Verificar si alguna patente es de cliente
+                    client_plates = [p for p in license_plates if 
+                                   Vehicle.objects.filter(
+                                       client__user=request.user, 
+                                       plate_number=p['text']
+                                   ).exists()]
+                    
+                    if client_plates:
+                        messages.success(request, 
+                            f'✅ Análisis completado: {total_objects} objetos, {total_plates} patente(s), {len(client_plates)} CLIENTE(S) identificado(s)')
+                    else:
+                        messages.success(request, 
+                            f'✅ Análisis completado: {total_objects} objetos, {total_plates} patente(s) detectada(s)')
                 else:
                     messages.warning(request, 
                         f'⚠️ Análisis completado: {total_objects} objetos analizados, pero no se detectaron patentes')
