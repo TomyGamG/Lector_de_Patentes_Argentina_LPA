@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Editar Vehículo{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h5>Editar vehículo {{ vehicle.plate_number }}</h5>
+    </div>
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            {{ form.as_p }}
+
+            <button class="btn btn-success">
+                <i class="fas fa-save"></i> Guardar
+            </button>
+            <a href="{% url 'vehicle_management' %}" class="btn btn-secondary">
+                Cancelar
+            </a>
+        </form>
+    </div>
+</div>
+{% endblock %}

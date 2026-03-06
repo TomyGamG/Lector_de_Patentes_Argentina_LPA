@@ -94,3 +94,47 @@ LOGIN_URL = 'login'
 GEMINI_API_KEY = 'AIzaSyBw7Rdnsd4WFS6oVjaHDXvsYMkhYPMdotU'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+
+    "formatters": {
+        "verbose": {
+            "format": "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
+        },
+    },
+
+    "handlers": {
+        "plate_file": {
+            "level": "INFO",
+            "class": "logging.FileHandler",
+            "filename": BASE_DIR / "logs/plate_detector.log",
+            "formatter": "verbose",
+            "encoding": "utf-8",
+        },
+    },
+
+    "loggers": {
+        # TU SISTEMA
+        "plate_detector": {
+            "handlers": ["plate_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+
+        # EasyOCR
+        "easyocr": {
+            "handlers": ["plate_file"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+
+        # Silenciar consola
+        "django": {
+            "handlers": ["plate_file"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}

@@ -19,7 +19,7 @@ class LoginForm(forms.Form):
 class VehicleForm(forms.ModelForm):
     class Meta:
         model = Vehicle
-        fields = ['plate_number', 'brand', 'model', 'color']  # ✅ CORREGIDO: usar plate_number en lugar de plate
+        fields = ['plate_number', 'brand', 'model', 'color']
         widgets = {
             'plate_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: ABC123'}),
             'brand': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: Toyota'}),
@@ -32,6 +32,10 @@ class VehicleForm(forms.ModelForm):
             'model': 'Modelo',
             'color': 'Color',
         }
+
+    def clean_plate_number(self):
+        plate = self.cleaned_data['plate_number']
+        return plate.replace(' ', '').upper()
 
 class ClientForm(forms.ModelForm):
     class Meta:

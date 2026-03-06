@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Eliminar Vehículo{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-trash"></i> Eliminar Vehículo
+                </h5>
+            </div>
+
+            <div class="card-body">
+                <p class="mb-3">
+                    ¿Estás seguro que querés eliminar el siguiente vehículo?
+                </p>
+
+                <ul class="list-group mb-3">
+                    <li class="list-group-item">
+                        <strong>Matrícula:</strong> {{ vehicle.plate_number }}
+                    </li>
+                    <li class="list-group-item">
+                        <strong>Vehículo:</strong>
+                        {{ vehicle.brand }} {{ vehicle.model }} ({{ vehicle.color }})
+                    </li>
+                </ul>
+
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'plate_detector:vehicle_management' %}"
+                           class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Cancelar
+                        </a>
+
+                        <button type="submit" class="btn btn-danger">
+                            <i class="fas fa-trash"></i> Sí, eliminar
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

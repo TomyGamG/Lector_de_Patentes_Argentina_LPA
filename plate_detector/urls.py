@@ -18,4 +18,7 @@ urlpatterns = [
     path('analysis/<int:analysis_id>/delete/', views.delete_analysis_view, name='delete_analysis'),
     path('register/', views.register, name='register'),
     path('settings/clear-old-data/', views.clear_old_data, name='clear_old_data'),
+    path('vehicles/edit/<int:vehicle_id>/', views.edit_vehicle, name='edit_vehicle'),
+    path('vehicles/delete/<int:vehicle_id>/', views.delete_vehicle, name='delete_vehicle'),
+    path('vehicles/reactivate/<int:vehicle_id>/', views.reactivate_vehicle, name='reactivate_vehicle'),
 ]

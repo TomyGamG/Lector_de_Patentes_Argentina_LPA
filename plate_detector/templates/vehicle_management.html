@@ -78,6 +78,27 @@
                         <p class="mb-1">{{ vehicle.brand }} {{ vehicle.model }} - {{ vehicle.color }}</p>
                         <small class="text-muted">Registrado: {{ vehicle.created_at|date:"d/m/Y" }}</small>
                     </div>
+                    <div class="mt-2 d-flex gap-2">
+                        {% if vehicle.is_active %}
+                            <a href="{% url 'edit_vehicle' vehicle.id %}"
+                            class="btn btn-sm btn-warning">
+                                <i class="fas fa-edit"></i> Editar
+                            </a>
+
+                            <a href="{% url 'delete_vehicle' vehicle.id %}"
+                            class="btn btn-sm btn-danger"
+                            onclick="return confirm('¿Desactivar este vehículo?');">
+                                <i class="fas fa-ban"></i> Desactivar
+                            </a>
+                        {% else %}
+                            <a href="{% url 'reactivate_vehicle' vehicle.id %}"
+                            class="btn btn-sm btn-success"
+                            onclick="return confirm('¿Reactivar este vehículo?');">
+                                <i class="fas fa-check-circle"></i> Reactivar
+                            </a>
+                        {% endif %}
+                    </div>
+
                     {% endfor %}
                 </div>
                 {% else %}

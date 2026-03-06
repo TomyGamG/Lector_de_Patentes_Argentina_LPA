@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Editar Vehículo{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-edit"></i> Editar Vehículo
+                </h5>
+            </div>
+
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label class="form-label">Matrícula</label>
+                        {{ form.plate_number }}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Marca</label>
+                        {{ form.brand }}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Modelo</label>
+                        {{ form.model }}
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Color</label>
+                        {{ form.color }}
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'plate_detector:vehicle_management' %}"
+                           class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Cancelar
+                        </a>
+
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-save"></i> Guardar cambios
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

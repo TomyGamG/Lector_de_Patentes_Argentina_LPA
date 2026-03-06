@@ -1,4 +1,4 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, StreamingHttpResponse
@@ -12,7 +12,7 @@ import time
 import json
 from .models import PlateDetection, Vehicle, Client, DetectionSettings, ImageAnalysis
 from .forms import CustomUserCreationForm, LoginForm, VehicleForm, ClientForm, SettingsForm, ImageAnalysisForm
-from .services import YOLOLicensePlateDetector, ImageAnalyzer, MotionDetector, save_detection, image_analyzer
+from .services import ImageAnalyzer, save_detection_to_django
 import os
 from django.utils import timezone
 from datetime import timedelta
@@ -22,76 +22,120 @@ from datetime import datetime
 camera_running = False
 camera = None
 
+
+# --- Analyzer singleton (evita reinstanciar el modelo en cada request) ---
+_image_analyzer_singleton = None
+
+def get_image_analyzer():
+    global _image_analyzer_singleton
+    if _image_analyzer_singleton is None:
+        _image_analyzer_singleton = ImageAnalyzer(use_yolo=True, yolo_model="yolov10n")
+    return _image_analyzer_singleton
+
+def create_annotated_image(image_path: str, analysis_result: dict):
+    """Dibuja bbox + texto en la imagen a partir del resultado del services nuevo."""
+    img = cv2.imread(image_path)
+    if img is None:
+        return None
+    plates = analysis_result.get("license_plates") or []
+    for p in plates:
+        coords = p.get("coordinates")
+        if not coords:
+            continue
+
+        x = int(coords.get("x", 0))
+        y = int(coords.get("y", 0))
+        w = int(coords.get("w", 0))
+        h = int(coords.get("h", 0))
+
+        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        label = f"{p.get('text','')} ({float(p.get('confidence') or 0.0):.2f})"
+        cv2.putText(
+            img,
+            label,
+            (x, max(0, y - 8)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 255, 0),
+            2
+        )
+        label = f"{p.get('text','')} ({float(p.get('confidence') or 0.0):.2f})"
+        cv2.putText(img, label, (x, max(0, y - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+    return img
 # En la clase VideoCamera, modifica el método get_frame:
 
 class VideoCamera:
     def __init__(self, camera_index=0):
         self.video = cv2.VideoCapture(camera_index)
-        self.detector = YOLOLicensePlateDetector()
-        self.motion_detector = MotionDetector()
         self.last_detection = 0
         self.detection_interval = 5
-        self.last_motion_check = 0
         self.debug_info = "Inicializando..."
-        self.current_user = None  # Agregar para almacenar usuario
-        
+        self.current_user = None
+
+        # Nuevo analyzer (services nuevo)
+        self.analyzer = get_image_analyzer()
+
     def set_user(self, user):
         """Establecer el usuario actual para las detecciones"""
         self.current_user = user
         print(f"👤 Usuario establecido en cámara: {user.username if user else 'None'}")
-        
+
     def get_frame(self):
         try:
             success, frame = self.video.read()
             if not success:
                 self.debug_info = "Error leyendo cámara"
                 return None
-            
-            # Redimensionar para performance
+
             frame = cv2.resize(frame, (640, 480))
             current_time = time.time()
-            
-            # Detectar movimiento
-            if current_time - self.last_motion_check > 2:
-                motion_detected = self.motion_detector.detect_motion(frame)
-                self.last_motion_check = current_time
-                
-                if motion_detected and current_time - self.last_detection > self.detection_interval:
-                    plates = self.detector.detect_plate(frame)
-                    if plates:
-                        self.last_detection = current_time
-                        # Pasar el usuario a save_detection
-                        threading.Thread(
-                            target=save_detection, 
-                            args=(plates[0], frame.copy(), self.current_user),  # Agregar usuario
-                            daemon=True
-                        ).start()
-                        self.debug_info = f"Patente detectada: {plates[0]['text']}"
-                    else:
-                        self.debug_info = "Buscando patentes..."
-            
-            # Dibujar información de debug
-            cv2.putText(frame, "SISTEMA ACTIVO", (10, 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            cv2.putText(frame, self.debug_info, (10, 60), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-            cv2.putText(frame, f"Usuario: {self.current_user.username if self.current_user else 'None'}", (10, 90), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-            cv2.putText(frame, f"Movimientos: {self.motion_detector.motion_count}", (10, 120), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-            cv2.putText(frame, f"Patentes: {self.detector.detection_count}", (10, 150), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-            
-            # Codificar frame
+
+            # Ejecutar análisis cada X segundos
+            if current_time - self.last_detection > self.detection_interval:
+                self.last_detection = current_time
+
+                result = self.analyzer.pipeline.process_image(frame)
+                plates = result.get("license_plates") or []
+
+                if plates:
+                    best = plates[0]
+                    plate_text = best.get("text", "")
+                    self.debug_info = f"Patente detectada: {plate_text}"
+
+                    # Guardar detección en Django en un thread para no trabar el stream
+                    threading.Thread(
+                        target=save_detection_to_django,
+                        kwargs={
+                            "image_bgr": frame.copy(),
+                            "plate_data": best,
+                            "user": self.current_user,
+                            "filename_prefix": "realtime",
+                        },
+                        daemon=True
+                    ).start()
+                else:
+                    self.debug_info = "Buscando patentes..."
+
+            # Overlay debug
+            cv2.putText(frame, "SISTEMA ACTIVO", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            cv2.putText(frame, self.debug_info, (10, 60),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+            cv2.putText(frame,
+                        f"Usuario: {self.current_user.username if self.current_user else 'None'}",
+                        (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
             ret, jpeg = cv2.imencode('.jpg', frame)
             return jpeg.tobytes() if ret else None
-            
+
         except Exception as e:
             self.debug_info = f"Error: {str(e)}"
             print(f"❌ Error en cámara: {e}")
             return None
 
 def gen(camera):
+
     global camera_running
     while camera_running:
         frame = camera.get_frame()
@@ -552,6 +596,51 @@ def vehicle_management(request):
     })
 
 @login_required
+def edit_vehicle(request, vehicle_id):
+    client = Client.objects.get(user=request.user)
+    vehicle = get_object_or_404(Vehicle, id=vehicle_id, client=client)
+
+    if request.method == 'POST':
+        form = VehicleForm(request.POST, instance=vehicle)
+        if form.is_valid():
+            form.save()
+            messages.success(request, '🚗 Vehículo actualizado correctamente')
+            return redirect('vehicle_management')
+    else:
+        form = VehicleForm(instance=vehicle)
+
+    return render(request, 'vehicle_edit.html', {
+        'form': form,
+        'vehicle': vehicle
+    })
+
+@login_required
+def delete_vehicle(request, vehicle_id):
+    client = Client.objects.get(user=request.user)
+    vehicle = get_object_or_404(Vehicle, id=vehicle_id, client=client)
+
+    vehicle.is_active = False
+    vehicle.save()
+
+    messages.warning(request, f'🛑 Vehículo {vehicle.plate_number} desactivado')
+    return redirect('vehicle_management')
+
+@login_required
+def reactivate_vehicle(request, vehicle_id):
+    client = Client.objects.get(user=request.user)
+    vehicle = get_object_or_404(Vehicle, id=vehicle_id, client=client)
+
+    vehicle.is_active = True
+    vehicle.save()
+
+    messages.success(
+        request,
+        f'✅ Vehículo {vehicle.plate_number} reactivado correctamente'
+    )
+    return redirect('vehicle_management')
+
+
+@login_required
 def settings_view(request):
     settings_obj, created = DetectionSettings.objects.get_or_create(id=1)
     
@@ -586,6 +675,59 @@ def image_analysis_view(request):
     }
     return render(request, 'image_analysis.html', context)
 
+def make_json_safe_analysis_result(result: dict) -> dict:
+    """
+    Quita objetos no serializables (np.ndarray) del resultado del services,
+    para poder guardarlo en un JSONField.
+    """
+    if not isinstance(result, dict):
+        return {}
+
+    safe = dict(result)
+
+    plates = safe.get("license_plates") or []
+    safe_plates = []
+    for p in plates:
+        if not isinstance(p, dict):
+            continue
+        p2 = dict(p)
+
+        # Claves NO serializables (np.ndarray)
+        p2.pop("region", None)
+        p2.pop("warped", None)
+
+        # Asegurar tipos simples
+        if "coordinates" in p2 and p2["coordinates"] is not None:
+            coords = p2["coordinates"]
+            if isinstance(coords, dict):
+                p2["coordinates"] = {
+                    "x": int(coords.get("x", 0)),
+                    "y": int(coords.get("y", 0)),
+                    "w": int(coords.get("w", 0)),
+                    "h": int(coords.get("h", 0)),
+                }
+            elif isinstance(coords, (list, tuple)) and len(coords) == 4:
+                p2["coordinates"] = {
+                    "x": int(coords[0]),
+                    "y": int(coords[1]),
+                    "w": int(coords[2]),
+                    "h": int(coords[3]),
+                }
+            else:
+                p2["coordinates"] = {"x": 0, "y": 0, "w": 0, "h": 0}
+
+        for k in ["confidence", "ocr_confidence", "yolo_confidence", "prefilter_confidence"]:
+            if k in p2 and p2[k] is not None:
+                try:
+                    p2[k] = float(p2[k])
+                except Exception:
+                    p2[k] = 0.0
+
+        safe_plates.append(p2)
+
+    safe["license_plates"] = safe_plates
+    return safe
+
 @login_required
 def upload_and_analyze_image(request):
     """Procesa la imagen subida y realiza el análisis"""
@@ -608,7 +750,8 @@ def upload_and_analyze_image(request):
                     return redirect('image_analysis')
                 
                 # Realizar análisis COMPLETO de la imagen
-                analysis_result = image_analyzer.analyze_image(image_analysis.image.path)
+                analyzer = get_image_analyzer()
+                analysis_result = analyzer.analyze_image(image_analysis.image.path)
                 
                 # Verificar si hubo error en el análisis
                 if 'error' in analysis_result:
@@ -617,16 +760,16 @@ def upload_and_analyze_image(request):
                     return redirect('image_analysis')
                 
                 # Actualizar el objeto con los resultados
-                image_analysis.analysis_result = analysis_result
+                image_analysis.analysis_result = make_json_safe_analysis_result(analysis_result)
                 
                 # Verificar si se detectaron patentes
                 license_plates = analysis_result.get('license_plates', [])
                 if license_plates:
                     image_analysis.plate_detected = True
                     # Tomar la patente con mayor confianza
-                    best_plate = max(license_plates, key=lambda x: x['combined_confidence'])
-                    image_analysis.detected_plate = best_plate['text']
-                    image_analysis.confidence = best_plate['combined_confidence']
+                    best_plate = max(license_plates, key=lambda x: float(x.get('confidence') or 0.0))
+                    image_analysis.detected_plate = best_plate.get('text', '')
+                    image_analysis.confidence = float(best_plate.get('confidence') or 0.0)
                     
                     # VERIFICAR SI ES CLIENTE antes de crear PlateDetection
                     is_client = False
@@ -635,19 +778,19 @@ def upload_and_analyze_image(request):
                         client = Client.objects.get(user=request.user)
                         vehicle = Vehicle.objects.filter(
                             client=client, 
-                            plate_number=best_plate['text']
+                            plate_number=best_plate.get('text','')
                         ).first()
                         if vehicle:
                             is_client = True
-                            print(f"✅ PATENTE DE CLIENTE DETECTADA: {best_plate['text']}")
+                            print(f"✅ PATENTE DE CLIENTE DETECTADA: {best_plate.get('text','')}")
                     except Client.DoesNotExist:
                         print(f"❌ Cliente no encontrado para usuario {request.user.username}")
                     
                     # Crear PlateDetection con la información correcta
                     '''PlateDetection.objects.create(
                         user=request.user,
-                        plate_number=best_plate['text'],
-                        confidence=best_plate['combined_confidence'],
+                        plate_number=best_plate.get('text',''),
+                        confidence=best_plate['confidence'],
                         image=image_analysis.image,
                         is_client=is_client,
                         vehicle=vehicle
@@ -656,8 +799,8 @@ def upload_and_analyze_image(request):
                 image_analysis.save()
                 
                 # Crear imagen anotada SIEMPRE (incluso si no hay patentes)
-                annotated_image = image_analyzer.create_annotated_image(
-                    image_analysis.image.path, 
+                annotated_image = create_annotated_image(
+                    image_analysis.image.path,
                     analysis_result
                 )
                 

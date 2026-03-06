@@ -1,3 +1,4 @@
+from multiprocessing.connection import Client
 import cv2
 import numpy as np
 import os
@@ -9,6 +10,40 @@ import threading
 import requests
 from PIL import Image
 import json
+
+import logging
+
+import sys
+logger = logging.getLogger("plate_detector")
+
+class StdoutToLogger:
+    def write(self, message):
+        message = message.strip()
+        if message:
+            logger.info(message)
+
+    def flush(self):
+        pass
+
+sys.stdout = StdoutToLogger()
+sys.stderr = StdoutToLogger()
+
+
+LOG_DIR = os.path.join(settings.BASE_DIR, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+LOG_FILE = os.path.join(LOG_DIR, "plate_detector.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+    ]
+)
+
+logger = logging.getLogger("plate_detector")
+
 
 print("🎯 Inicializando Sistema de Análisis con YOLOv8...")
 
@@ -35,14 +70,215 @@ class Timer:
             print(f"⏰ TIEMPO TOTAL: {execution_time:.2f} segundos")
         return False
 
+class RealTimeVisualizer:
+    """Clase para visualización en tiempo real del análisis"""
+    
+    def __init__(self, window_name="Sistema de Análisis - Tiempo Real"):
+        self.window_name = window_name
+        self.is_active = False
+        self.current_frame = None
+        self.detections = []
+        self.processing_info = ""
+        self.status_info = ""
+        
+    def start(self):
+        """Iniciar la visualización en tiempo real"""
+        try:
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            cv2.resizeWindow(self.window_name, 1200, 800)
+            self.is_active = True
+            print(f"🖥️  Visualización en tiempo real iniciada: {self.window_name}")
+        except Exception as e:
+            print(f"❌ Error iniciando visualización: {e}")
+    
+    def update_frame(self, frame, detections=None, processing_info="", status_info=""):
+        """Actualizar el frame con las detecciones actuales"""
+        self.current_frame = frame.copy()
+        self.detections = detections if detections else []
+        self.processing_info = processing_info
+        self.status_info = status_info
+        
+        # Dibujar en el frame
+        self._draw_detections()
+        self._draw_info_panel()
+        
+    def _draw_detections(self):
+        """Dibujar todas las detecciones en el frame"""
+        if self.current_frame is None:
+            return
+            
+        for detection in self.detections:
+            try:
+                # Obtener coordenadas
+                if 'bbox' in detection:
+                    x, y, w, h = detection['bbox']
+                    
+                    # Determinar color según el método de detección
+                    color = self._get_detection_color(detection)
+                    
+                    # Dibujar bounding box
+                    cv2.rectangle(self.current_frame, (x, y), (x + w, y + h), color, 3)
+                    
+                    # Preparar texto de etiqueta
+                    label_parts = []
+                    
+                    # Agregar clase si existe
+                    if 'class_name' in detection and detection['class_name'] != 'unknown':
+                        label_parts.append(detection['class_name'])
+                    
+                    # Agregar método de detección
+                    if 'method' in detection:
+                        label_parts.append(f"Método: {detection['method']}")
+                    
+                    # Agregar confianza si existe
+                    if 'confidence' in detection:
+                        label_parts.append(f"Conf: {detection['confidence']:.2f}")
+                    
+                    # Agregar texto de patente si existe
+                    if 'plate_text' in detection and detection['plate_text']:
+                        plate_text = detection['plate_text']
+                        label_parts.append(f"Patente: {plate_text}")
+                        
+                        # Dibujar fondo para texto de patente
+                        text_size = cv2.getTextSize(plate_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
+                        cv2.rectangle(self.current_frame, 
+                                    (x, y - text_size[1] - 15), 
+                                    (x + text_size[0] + 10, y), 
+                                    color, -1)
+                        
+                        # Dibujar texto de patente
+                        cv2.putText(self.current_frame, plate_text, 
+                                  (x + 5, y - 10), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                    
+                    # Dibujar etiqueta informativa
+                    if label_parts:
+                        info_text = " | ".join(label_parts)
+                        text_size = cv2.getTextSize(info_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)[0]
+                        
+                        # Fondo para la etiqueta
+                        cv2.rectangle(self.current_frame, 
+                                    (x, y + h), 
+                                    (x + text_size[0] + 10, y + h + text_size[1] + 10), 
+                                    color, -1)
+                        
+                        # Texto de la etiqueta
+                        cv2.putText(self.current_frame, info_text, 
+                                  (x + 5, y + h + text_size[1] + 5), 
+                                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                        
+            except Exception as e:
+                print(f"❌ Error dibujando detección: {e}")
+                continue
+    
+    def _get_detection_color(self, detection):
+        """Obtener color según el tipo de detección"""
+        method = detection.get('method', 'unknown')
+        is_plate = detection.get('is_license_plate', False)
+        
+        if is_plate:
+            return (0, 255, 0)  # Verde para patentes detectadas
+        elif 'yolo' in method:
+            return (255, 0, 0)   # Azul para YOLO
+        elif 'color' in method:
+            return (0, 255, 255) # Amarillo para color
+        elif 'shape' in method:
+            return (0, 0, 255)   # Rojo para forma
+        elif 'grid' in method:
+            return (255, 0, 255) # Magenta para cuadrícula
+        else:
+            return (128, 128, 128) # Gris para otros
+    
+    def _draw_info_panel(self):
+        """Dibujar panel de información en tiempo real"""
+        if self.current_frame is None:
+            return
+            
+        height, width = self.current_frame.shape[:2]
+        
+        # Crear panel lateral de información
+        panel_width = 400
+        panel = np.zeros((height, panel_width, 3), dtype=np.uint8)
+        
+        # Título del sistema
+        cv2.putText(panel, "SISTEMA DE ANALISIS", (10, 30), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        
+        # Información de procesamiento
+        y_offset = 70
+        cv2.putText(panel, "INFORMACION EN TIEMPO REAL:", (10, y_offset), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
+        y_offset += 30
+        
+        # Mostrar información de procesamiento
+        if self.processing_info:
+            cv2.putText(panel, f"Procesando: {self.processing_info}", (10, y_offset), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            y_offset += 25
+        
+        # Mostrar estado del sistema
+        if self.status_info:
+            cv2.putText(panel, f"Estado: {self.status_info}", (10, y_offset), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            y_offset += 25
+        
+        # Estadísticas de detección
+        total_detections = len(self.detections)
+        plate_detections = len([d for d in self.detections if d.get('is_license_plate', False)])
+        
+        cv2.putText(panel, f"Total detecciones: {total_detections}", (10, y_offset + 40), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        cv2.putText(panel, f"Patentes detectadas: {plate_detections}", (10, y_offset + 65), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        
+        # Leyenda de métodos
+        y_offset += 120
+        cv2.putText(panel, "LEYENDA DE COLORES:", (10, y_offset), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 1)
+        y_offset += 30
+        
+        legend_items = [
+            ("Patente Detectada", (0, 255, 0)),
+            ("YOLO (Objetos)", (255, 0, 0)),
+            ("Color (Patentes)", (0, 255, 255)),
+            ("Forma (Rectangulos)", (0, 0, 255)),
+            ("Cuadricula", (255, 0, 255)),
+            ("Otros", (128, 128, 128))
+        ]
+        
+        for i, (text, color) in enumerate(legend_items):
+            # Cuadro de color
+            cv2.rectangle(panel, (10, y_offset + i*25), (30, y_offset + i*25 + 15), color, -1)
+            cv2.rectangle(panel, (10, y_offset + i*25), (30, y_offset + i*25 + 15), (255, 255, 255), 1)
+            
+            # Texto
+            cv2.putText(panel, text, (40, y_offset + i*25 + 12), 
+                      cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+        
+        # Combinar panel con la imagen principal
+        combined = np.hstack([self.current_frame, panel])
+        self.current_frame = combined
+    
+    def show(self):
+        """Mostrar el frame actual"""
+        if self.current_frame is not None and self.is_active:
+            cv2.imshow(self.window_name, self.current_frame)
+    
+    def stop(self):
+        """Detener la visualización"""
+        self.is_active = False
+        cv2.destroyWindow(self.window_name)
+        print("🖥️  Visualización en tiempo real detenida")
+
 class YOLOLicensePlateDetector:
-    def __init__(self, use_yolo=True, yolo_model='yolov8s'):
+    def __init__(self, use_yolo=True, yolo_model='yolov10n'):
         self.model = None
         self.detection_count = 0
         self.last_processing_time = 0
         self.processing_interval = 2
         self.use_yolo = use_yolo
         self.yolo_model = yolo_model
+        self.visualizer = RealTimeVisualizer()
         
         if self.use_yolo:
             self.load_yolo_model()
@@ -56,7 +292,7 @@ class YOLOLicensePlateDetector:
             from ultralytics import YOLO
             
             # Usar YOLOv8s para mejor precisión
-            self.model = YOLO('yolov8s.pt')
+            self.model = YOLO('yolov10n.pt')
             
             # Verificar dispositivo
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -68,7 +304,86 @@ class YOLOLicensePlateDetector:
             print(f"❌ ERROR CRÍTICO: No se pudo cargar YOLO: {e}")
             self.model = None
 
+    def start_real_time_analysis(self, video_source=0):
+        """Iniciar análisis en tiempo real con visualización"""
+        try:
+            print("🎬 INICIANDO ANALISIS EN TIEMPO REAL...")
+            self.visualizer.start()
+            
+            # Inicializar captura de video
+            cap = cv2.VideoCapture(video_source)
+            if not cap.isOpened():
+                print(f"❌ No se pudo abrir la fuente de video: {video_source}")
+                return
+            
+            print(f"✅ Cámara inicializada: {video_source}")
+            
+            frame_count = 0
+            processing_frame = False
+            
+            while True:
+                # Leer frame
+                ret, frame = cap.read()
+                if not ret:
+                    print("❌ No se pudo leer el frame")
+                    break
+                
+                frame_count += 1
+                
+                # Procesar cada 5 frames para mejor performance
+                if frame_count % 5 == 0 and not processing_frame:
+                    processing_frame = True
+                    
+                    # Procesar en un hilo separado para no bloquear la visualización
+                    def process_frame():
+                        try:
+                            # Actualizar información de procesamiento
+                            self.visualizer.processing_info = f"Frame {frame_count} - Analizando..."
+                            
+                            # Realizar detección
+                            detections = self.scan_entire_image_for_plates(frame)
+                            
+                            # Actualizar visualización con resultados
+                            self.visualizer.update_frame(
+                                frame, 
+                                detections,
+                                processing_info=f"Frame {frame_count} - {len(detections)} objetos",
+                                status_info="Analisis activo"
+                            )
+                            
+                        except Exception as e:
+                            print(f"❌ Error procesando frame: {e}")
+                            self.visualizer.update_frame(
+                                frame, 
+                                [],
+                                processing_info=f"Frame {frame_count} - Error",
+                                status_info="Error en analisis"
+                            )
+                        finally:
+                            processing_frame = False
+                    
+                    # Ejecutar procesamiento en hilo separado
+                    threading.Thread(target=process_frame, daemon=True).start()
+                
+                # Mostrar frame actual
+                self.visualizer.show()
+                
+                # Salir con 'q'
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+            
+            # Liberar recursos
+            cap.release()
+            self.visualizer.stop()
+            cv2.destroyAllWindows()
+            print("✅ Análisis en tiempo real finalizado")
+            
+        except Exception as e:
+            print(f"❌ Error en análisis en tiempo real: {e}")
+            self.visualizer.stop()
+
     def corregir_patente(self, texto):
+        # ... (mantener el mismo código de corrección de patentes)
         import numpy as np
 
         digit_to_number = {
@@ -90,7 +405,6 @@ class YOLOLicensePlateDetector:
             '4': 'A',
             '7': 'T',
             '4': 'V',
-            '6': 'B',
         }
         
         if not texto:
@@ -133,7 +447,6 @@ class YOLOLicensePlateDetector:
             corr = " ".join(array_texto)
             return corr
 
-
     def scan_entire_image_for_plates(self, image):
         """Escanea toda la imagen en busca de patentes usando múltiples métodos"""
         plate_candidates = []
@@ -160,9 +473,38 @@ class YOLOLicensePlateDetector:
         plate_candidates.extend(grid_candidates)
         print(f"   ✅ Escaneo en cuadrícula encontró {len(grid_candidates)} candidatos")
         
-        return plate_candidates
+        # Procesar candidatos para identificar patentes
+        final_detections = []
+        for candidate in plate_candidates:
+            # Asegurar que todas las claves necesarias existan
+            detection_info = {
+                'bbox': candidate.get('bbox', (0, 0, 0, 0)),
+                'class_name': candidate.get('class_name', 'unknown'),
+                'confidence': candidate.get('confidence', 0.0),
+                'method': candidate.get('method', 'unknown'),
+                'class_id': candidate.get('class_id', -1),  # Valor por defecto -1
+                'region': candidate.get('region', None),
+                'is_license_plate': False,
+                'plate_text': None,
+                'plate_confidence': 0.0
+            }
+            
+            # Verificar si es patente potencial
+            if self.is_potential_license_plate(candidate, image.shape):
+                plate_text, plate_confidence = self.recognize_plate_text(candidate['region'])
+                if plate_text:
+                    detection_info.update({
+                        'is_license_plate': True,
+                        'plate_text': plate_text,
+                        'plate_confidence': plate_confidence
+                    })
+                    print(f"✅ PATENTE ENCONTRADA: {plate_text}")
+            
+            final_detections.append(detection_info)
+        
+        return final_detections
     
-    def scan_image_grid_comprehensive(self, image, grid_size=1):
+    '''def scan_image_grid_comprehensive(self, image, grid_size=1):
         """Divide la imagen en cuadrícula y en cada celda busca por color y forma"""
         try:
             candidates = []
@@ -233,8 +575,7 @@ class YOLOLicensePlateDetector:
             
         except Exception as e:
             print(f"❌ Error en escaneo de cuadrícula comprehensivo: {e}")
-            return []
-    
+            return []'''    
     def detect_objects_yolo(self, image):
         """Detección de objetos usando YOLO en toda la imagen"""
         try:
@@ -333,7 +674,7 @@ class YOLOLicensePlateDetector:
                             'bbox': (x, y, w, h),
                             'confidence': 0.3,
                             'class_name': 'shape_candidate',
-                            'class_id': -1,
+                            'class_id': -1,  # Añadir class_id
                             'method': f'shape_method_{i}'
                         })
             
@@ -342,7 +683,7 @@ class YOLOLicensePlateDetector:
         except Exception as e:
             print(f"❌ Error en búsqueda por forma: {e}")
             return []
-    
+
     def find_plates_by_color(self, image):
         """Busca patentes basándose en combinaciones de colores comunes"""
         try:
@@ -395,7 +736,7 @@ class YOLOLicensePlateDetector:
                             'bbox': (x, y, w, h),
                             'confidence': color_combo['confidence'],
                             'class_name': f"color_{color_combo['name']}",
-                            'class_id': -2,
+                            'class_id': -2,  # Añadir class_id
                             'method': 'color_based'
                         })
             
@@ -403,6 +744,79 @@ class YOLOLicensePlateDetector:
             
         except Exception as e:
             print(f"❌ Error en búsqueda por color: {e}")
+            return []
+
+    def scan_image_grid_comprehensive(self, image, grid_size=1):
+        """Divide la imagen en cuadrícula y en cada celda busca por color y forma"""
+        try:
+            candidates = []
+            height, width = image.shape[:2]
+            
+            cell_height = height // grid_size
+            cell_width = width // grid_size
+            
+            print(f"🔍 Escaneando {grid_size}x{grid_size} cuadrícula ({grid_size*grid_size} celdas)...")
+            
+            for i in range(grid_size):
+                for j in range(grid_size):
+                    # Calcular coordenadas de la celda
+                    y1 = i * cell_height
+                    y2 = min((i + 1) * cell_height, height)
+                    x1 = j * cell_width
+                    x2 = min((j + 1) * cell_width, width)
+                    
+                    # Extraer celda
+                    cell = image[y1:y2, x1:x2]
+                    
+                    if cell.size > 0:
+                        # BUSCAR POR FORMA en esta celda
+                        shape_candidates = self.find_plates_by_shape(cell)
+                        
+                        # BUSCAR POR COLOR en esta celda
+                        color_candidates = self.find_plates_by_color(cell)
+                        
+                        # Procesar candidatos por forma
+                        for candidate in shape_candidates:
+                            # Convertir coordenadas relativas a absolutas
+                            abs_x = x1 + candidate['bbox'][0]
+                            abs_y = y1 + candidate['bbox'][1]
+                            abs_w = candidate['bbox'][2]
+                            abs_h = candidate['bbox'][3]
+                            
+                            candidates.append({
+                                'region': candidate['region'],
+                                'bbox': (abs_x, abs_y, abs_w, abs_h),
+                                'confidence': candidate['confidence'] * 0.9,
+                                'class_name': f"grid_shape_{i}_{j}",
+                                'class_id': -3,  # Añadir class_id
+                                'method': f'grid_shape_{i}_{j}'
+                            })
+                        
+                        # Procesar candidatos por color
+                        for candidate in color_candidates:
+                            # Convertir coordenadas relativas a absolutas
+                            abs_x = x1 + candidate['bbox'][0]
+                            abs_y = y1 + candidate['bbox'][1]
+                            abs_w = candidate['bbox'][2]
+                            abs_h = candidate['bbox'][3]
+                            
+                            candidates.append({
+                                'region': candidate['region'],
+                                'bbox': (abs_x, abs_y, abs_w, abs_h),
+                                'confidence': candidate['confidence'] * 0.9,
+                                'class_name': f"grid_color_{i}_{j}",
+                                'class_id': -4,  # Añadir class_id
+                                'method': f'grid_color_{i}_{j}'
+                            })
+                        
+                        # Mostrar progreso por celda
+                        if shape_candidates or color_candidates:
+                            print(f"   📍 Celda [{i},{j}]: {len(shape_candidates)} forma, {len(color_candidates)} color")
+            
+            return candidates
+            
+        except Exception as e:
+            print(f"❌ Error en escaneo de cuadrícula comprehensivo: {e}")
             return []
     
     def scan_image_grid(self, image, grid_size=1):
@@ -560,30 +974,6 @@ class YOLOLicensePlateDetector:
             print(f"❌ Error en preprocesamiento EasyOCR: {e}")
             return plate_image
 
-    def clean_ocr_text(self, text):
-        """Limpiar y normalizar texto de OCR"""
-        if not text:
-            return ""
-        
-        # Convertir a mayúsculas y quitar espacios
-        clean = text.upper().replace(' ', '').replace('-', '').replace('.', '')
-        
-        # Corregir caracteres comúnmente confundidos
-        corrections = {
-            '5': 'S', '0': 'O', '1': 'I', '8': 'B',
-            '2': 'Z', '€': 'E', '@': 'A', '§': 'S'
-        }
-        
-        corrected = []
-        for char in clean:
-            if char in corrections:
-                corrected_char = corrections[char]
-                corrected.append(corrected_char)
-            elif char.isalnum():
-                corrected.append(char)
-        
-        return ''.join(corrected)
-
     def recognize_plate_text_tesseract(self, plate_image):
         """Método de fallback con Tesseract (por si EasyOCR falla)"""
         try:
@@ -682,6 +1072,7 @@ class YOLOLicensePlateDetector:
                 len(clean_text.replace(' ', '')) == letters + digits)
     
     def detect_plate(self, image):
+        print('Hola')
         """Detección principal - Analiza TODA la imagen"""
         try:
             if self.model is None:
@@ -741,13 +1132,16 @@ class YOLOLicensePlateDetector:
             return []
         
 class ImageAnalyzer:
-    def __init__(self, use_yolo=True, yolo_model='yolov8s'):
+    def __init__(self, use_yolo=True, yolo_model='yolov10n'):
         self.yolo_detector = YOLOLicensePlateDetector(use_yolo=use_yolo, yolo_model=yolo_model)
         print("✅ Analizador de imágenes completo inicializado")
 
+    def start_real_time_analysis(self, video_source=0):
+        """Iniciar análisis en tiempo real"""
+        self.yolo_detector.start_real_time_analysis(video_source)
+
     def analyze_image(self, image_path):
         """Analiza una imagen COMPLETA y detecta objetos y patentes"""
-        # ✅ TEMPORIZADOR PRINCIPAL - Solo se activa aquí
         with Timer(f"Procesamiento de imagen: {os.path.basename(image_path)}"):
             try:
                 print(f"🔍 ANALIZANDO IMAGEN COMPLETA: {image_path}")
@@ -777,39 +1171,31 @@ class ImageAnalyzer:
                 
                 # Procesar cada detección
                 for detection in detections:
+                    # Validar y asegurar que todas las claves existan
                     object_info = {
-                        "class_name": detection['class_name'],
-                        "class_id": detection['class_id'],
-                        "confidence": detection['confidence'],
-                        "bbox": detection['bbox'],
-                        "method": detection['method'],
-                        "is_license_plate": False,
-                        "plate_text": None,
-                        "plate_confidence": 0.0
+                        "class_name": detection.get('class_name', 'unknown'),
+                        "class_id": detection.get('class_id', -1),  # Valor por defecto
+                        "confidence": detection.get('confidence', 0.0),
+                        "bbox": detection.get('bbox', (0, 0, 0, 0)),
+                        "method": detection.get('method', 'unknown'),
+                        "is_license_plate": detection.get('is_license_plate', False),
+                        "plate_text": detection.get('plate_text', None),
+                        "plate_confidence": detection.get('plate_confidence', 0.0)
                     }
                     
-                    # Verificar si es una patente potencial
-                    if self.yolo_detector.is_potential_license_plate(detection, image.shape):
-                        # Intentar leer la patente
-                        plate_text, plate_confidence = self.yolo_detector.recognize_plate_text(detection['region'])
-                        
-                        if plate_text:
-                            object_info.update({
-                                "is_license_plate": True,
-                                "plate_text": plate_text,
-                                "plate_confidence": plate_confidence
-                            })
-                            
-                            # Agregar a la lista de patentes
-                            analysis_result["license_plates"].append({
-                                "text": plate_text,
-                                "confidence": plate_confidence,
-                                "yolo_confidence": detection['confidence'],
-                                "combined_confidence": (detection['confidence'] + plate_confidence) / 2,
-                                "bbox": detection['bbox'],
-                                "method": detection['method']
-                            })
+                    # Verificar si es una patente detectada
+                    if object_info["is_license_plate"] and object_info["plate_text"]:
+                        # Agregar a la lista de patentes
+                        analysis_result["license_plates"].append({
+                            "text": object_info["plate_text"],
+                            "confidence": object_info["plate_confidence"],
+                            "yolo_confidence": object_info["confidence"],
+                            "combined_confidence": (object_info["confidence"] + object_info["plate_confidence"]) / 2,
+                            "bbox": object_info["bbox"],
+                            "method": object_info["method"]
+                        })
                     
+                    # Siempre agregar a objetos detectados
                     analysis_result["objects_detected"].append(object_info)
                 
                 print(f"✅ Análisis COMPLETO: {len(analysis_result['objects_detected'])} objetos, {len(analysis_result['license_plates'])} patentes")
@@ -817,6 +1203,8 @@ class ImageAnalyzer:
                 
             except Exception as e:
                 print(f"❌ Error analizando imagen: {e}")
+                import traceback
+                traceback.print_exc()
                 return {"error": str(e)}
     
     def create_annotated_image(self, image_path, analysis_result):
@@ -831,7 +1219,11 @@ class ImageAnalyzer:
             
             # Dibujar todos los objetos detectados
             for obj in analysis_result.get("objects_detected", []):
-                x, y, w, h = obj["bbox"]
+                bbox = obj.get("bbox", (0, 0, 0, 0))
+                if len(bbox) != 4:
+                    continue
+                    
+                x, y, w, h = bbox
                 
                 # Elegir color según el tipo de objeto y método
                 color_map = {
@@ -862,8 +1254,8 @@ class ImageAnalyzer:
                         
                         # Texto
                         cv2.putText(annotated_image, plate_text, 
-                                  (x, y - 5), 
-                                  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                                (x, y - 5), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 else:
                     thickness = 2
                 
@@ -871,7 +1263,7 @@ class ImageAnalyzer:
                 cv2.rectangle(annotated_image, (x, y), (x + w, y + h), color, thickness)
                 
                 # Etiqueta del método y clase
-                label = f"{obj['class_name']} ({obj.get('method', 'unknown')})"
+                label = f"{obj.get('class_name', 'unknown')} ({obj.get('method', 'unknown')})"
                 if not obj.get("is_license_plate", False):
                     label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.4, 1)[0]
                     cv2.rectangle(annotated_image, 
@@ -879,8 +1271,8 @@ class ImageAnalyzer:
                                 (x + label_size[0], y + h + label_size[1] + 5), 
                                 color, -1)
                     cv2.putText(annotated_image, label, 
-                              (x, y + h + label_size[1]), 
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                            (x, y + h + label_size[1]), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
             
             # Agregar leyenda de métodos
             self.add_legend(annotated_image, color_map)
@@ -978,8 +1370,8 @@ class MotionDetector:
             print(f"❌ Error en detección de movimiento: {e}")
             return False
 
-def save_detection(plate_data, image):
-    """Guarda detección en base de datos"""
+def save_detection(plate_data, image, user=None):
+    """Guarda detección en base de datos con filtro por usuario"""
     try:
         plates_dir = os.path.join(settings.MEDIA_ROOT, 'plates')
         os.makedirs(plates_dir, exist_ok=True)
@@ -997,10 +1389,31 @@ def save_detection(plate_data, image):
         
         cv2.imwrite(filepath, debug_image)
         
-        vehicle = Vehicle.objects.filter(plate_number=plate_data['text']).first()
-        is_client = vehicle is not None
+        # BUSCAR VEHÍCULO DEL USUARIO ACTUAL
+        vehicle = None
+        is_client = False
+        
+        if user and user.is_authenticated:
+            try:
+                # Obtener el cliente asociado al usuario
+                client = Client.objects.get(user=user)
+                # Buscar vehículo por patente Y que pertenezca al cliente
+                vehicle = Vehicle.objects.filter(
+                    client=client, 
+                    plate_number=plate_data['text']
+                ).first()
+                
+                if vehicle:
+                    is_client = True
+                    print(f"✅ VEHÍCULO ENCONTRADO: {plate_data['text']} para usuario {user.username}")
+                else:
+                    print(f"⚠️ Vehículo NO encontrado: {plate_data['text']} para usuario {user.username}")
+                    
+            except Client.DoesNotExist:
+                print(f"❌ Cliente no encontrado para usuario {user.username}")
         
         detection = PlateDetection(
+            user=user,  # Asignar usuario
             plate_number=plate_data['text'],
             confidence=plate_data.get('confidence', 0.8),
             image=f'plates/{filename}',
@@ -1010,7 +1423,7 @@ def save_detection(plate_data, image):
         detection.save()
         
         status = "✅ CLIENTE" if is_client else "⚠️ NO CLIENTE"
-        print(f"💾 DETECCIÓN GUARDADA: {plate_data['text']} - {status}")
+        print(f"💾 DETECCIÓN GUARDADA: {plate_data['text']} - {status} - Usuario: {user.username if user else 'Anónimo'}")
         
         return detection
         
@@ -1019,7 +1432,54 @@ def save_detection(plate_data, image):
         return None
 
 # ✅ INSTANCIAS GLOBALES
-image_analyzer = ImageAnalyzer(use_yolo=True, yolo_model='yolov8s')
+image_analyzer = ImageAnalyzer(use_yolo=True, yolo_model='yolov10n')
 motion_detector = MotionDetector()
 
 print("🎯 Sistema de análisis con YOLO listo!")
+
+def start_real_time_detection():
+    """Función para iniciar detección en tiempo real desde Django"""
+    try:
+        print("🚀 INICIANDO DETECCIÓN EN TIEMPO REAL DESDE DJANGO...")
+        image_analyzer.start_real_time_analysis(video_source=0)
+        return True
+    except Exception as e:
+        print(f"❌ Error iniciando detección en tiempo real: {e}")
+        return False
+
+
+
+# --- API simple para tests / uso externo ---
+# Esto evita que tus tests dependan de detalles internos.
+
+from typing import Tuple
+
+_analyzer_singleton = None
+
+def process_plate_image(image_path: str) -> Tuple[str, float]:
+    """
+    Procesa una imagen y devuelve:
+      (plate_text, confidence_final)
+
+    Wrapper para tests (y para endpoints si después querés).
+    """
+    global _analyzer_singleton
+
+    if _analyzer_singleton is None:
+        # Usá tus defaults reales
+        _analyzer_singleton = ImageAnalyzer(use_yolo=True, yolo_model="yolov10n")
+
+    result = _analyzer_singleton.analyze_image(image_path) or {}
+    plates = result.get("license_plates") or []
+
+    if not plates:
+        return "", 0.0
+
+    def score(p: dict) -> float:
+        # preferimos combined_confidence si existe
+        return float(p.get("combined_confidence") or p.get("confidence") or 0.0)
+
+    best = max(plates, key=score)
+
+    plate = best.get("text") or best.get("plate_text") or best.get("plate_number") or ""
+    return str(plate), score(best)
