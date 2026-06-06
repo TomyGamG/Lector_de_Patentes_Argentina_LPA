@@ -1997,3 +1997,37 @@
 2026-03-06 15:27:12,440 | INFO | django.server | "GET /plates/ HTTP/1.1" 200 174424
 2026-03-06 15:27:12,678 | INFO | django.server | "GET /media/analyzed/2026/03/06/IVX112_FrgZ87s.jpg HTTP/1.1" 304 0
 2026-03-06 15:27:12,709 | INFO | django.server | "GET /media/analyzed/2026/03/06/IVX112.jpg HTTP/1.1" 304 0
+2026-03-06 17:44:03,008 | INFO | django.utils.autoreload | Watching for file changes with StatReloader
+2026-03-06 17:44:14,595 | INFO | django.server | "GET / HTTP/1.1" 302 0
+2026-03-06 17:44:14,889 | INFO | django.server | "GET /dashboard/ HTTP/1.1" 200 46814
+2026-03-06 17:44:15,509 | INFO | django.server | "GET /media/analyzed/2026/03/06/IVX112_FrgZ87s.jpg HTTP/1.1" 304 0
+2026-03-06 17:44:15,521 | INFO | django.server | "GET /media/analyzed/2026/03/06/s8d1o0yuw7p91.jpg HTTP/1.1" 304 0
+2026-03-06 17:44:15,524 | INFO | django.server | "GET /media/analyzed/2026/03/06/IVX112.jpg HTTP/1.1" 304 0
+2026-03-06 17:44:15,531 | INFO | django.server | "GET /media/analyzed/2026/03/06/recall-patente-mercosurjpg_9Qpl182.webp HTTP/1.1" 304 0
+2026-03-06 17:44:15,531 | INFO | django.server | "GET /media/analyzed/2026/03/06/auto228_A44Jv1n.jpg HTTP/1.1" 304 0
+2026-03-06 17:44:15,531 | INFO | django.server | "GET /media/analyzed/2026/03/06/565559_1_im_eqtdCLQ.jpg HTTP/1.1" 304 0
+2026-03-06 17:44:15,536 | INFO | django.server | "GET /media/analyzed/2026/03/06/images_5_Ndbmoef.jpg HTTP/1.1" 304 0
+2026-03-06 17:44:15,545 | INFO | django.server | "GET /media/analyzed/2026/03/06/NPAZ_888c03e1a35846d8a9178930be95b1991_l6693F9.jpg HTTP/1.1" 304 0
+2026-03-06 17:44:22,267 | INFO | django.server | "GET /logout/ HTTP/1.1" 302 0
+2026-03-06 17:44:22,291 | INFO | django.server | "GET / HTTP/1.1" 200 9408
+2026-03-06 17:44:34,319 | INFO | django.server | "POST / HTTP/1.1" 302 0
+2026-03-06 17:44:34,433 | INFO | django.server | "GET /dashboard/ HTTP/1.1" 200 46814
+2026-03-06 17:44:54,043 | INFO | django.server | "GET /vehicles/ HTTP/1.1" 200 18282
+2026-03-06 17:45:26,572 | INFO | django.server | "POST /vehicles/ HTTP/1.1" 302 0
+2026-03-06 17:45:26,597 | INFO | django.server | "GET /vehicles/ HTTP/1.1" 200 19711
+2026-03-06 17:46:08,547 | INFO | django.server | "GET /vehicles/edit/9/ HTTP/1.1" 200 10806
+2026-03-06 17:46:13,954 | INFO | django.server | "POST /vehicles/edit/9/ HTTP/1.1" 302 0
+2026-03-06 17:46:13,980 | INFO | django.server | "GET /vehicles/ HTTP/1.1" 200 20002
+2026-03-06 17:46:45,454 | INFO | django.server | "GET /image-analysis/ HTTP/1.1" 200 27813
+2026-03-06 17:47:13,065 | INFO | plate_detector | analyze_image START | image=C:\Users\tomas\OneDrive\Documentos\vscodepy\LectorFinal\media\analyzed\2026\03\06\565559_1_im_QceOtX5.jpg
+2026-03-06 17:47:20,814 | INFO | plate_detector | process_image | candidates=4
+2026-03-06 17:47:27,195 | WARNING | easyocr.easyocr | Using CPU. Note: This module is much faster with a GPU.
+2026-03-06 17:47:52,125 | INFO | plate_detector | process_image SUMMARY | plates=1 | discarded_prefilter=3 | discarded_invalid=0
+2026-03-06 17:47:52,127 | INFO | plate_detector | analyze_image DONE | image=C:\Users\tomas\OneDrive\Documentos\vscodepy\LectorFinal\media\analyzed\2026\03\06\565559_1_im_QceOtX5.jpg | plates=1 | candidates=4 | elapsed=39.06s
+2026-03-06 17:47:52,182 | INFO | django.server | "POST /upload-analyze/ HTTP/1.1" 302 0
+2026-03-06 17:47:52,212 | INFO | django.server | "GET /image-analysis/ HTTP/1.1" 200 28321
+2026-03-06 17:47:59,348 | INFO | django.server | "GET /analysis/92/ HTTP/1.1" 200 20357
+2026-03-06 17:47:59,629 | INFO | django.server | "GET /media/analyzed/2026/03/06/565559_1_im_QceOtX5.jpg HTTP/1.1" 200 233671
+2026-03-06 17:47:59,652 | INFO | django.server | "GET /media/analyzed/2026/03/06/565559_1_im_QceOtX5_annotated.jpg HTTP/1.1" 200 312889
+2026-03-06 17:49:04,630 | INFO | django.server | "GET /dashboard/ HTTP/1.1" 200 46973
+2026-03-06 17:49:04,748 | INFO | django.server | "GET /media/analyzed/2026/03/06/565559_1_im_QceOtX5.jpg HTTP/1.1" 304 0
