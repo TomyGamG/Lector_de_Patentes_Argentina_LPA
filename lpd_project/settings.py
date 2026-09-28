@@ -91,8 +91,6 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 LOGIN_REDIRECT_URL = 'dashboard'
 LOGIN_URL = 'login'
 
-GEMINI_API_KEY = 'AIzaSyBw7Rdnsd4WFS6oVjaHDXvsYMkhYPMdotU'
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGGING = {
